@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+backend/node_modules/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Editor settings
+.vscode/
+
+# ZIP files
+backend.zip
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db

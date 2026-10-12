@@ -12,7 +12,7 @@ import {
 const router = Router();
 router.get("/me", authMiddleware, getCurrentUser);
 router.patch("/update", authMiddleware, updateCurrentUserAccount);
-router.get("/", authMiddleware, getAllUsers);
+router.get("/", authMiddleware,userRoleMiddleware(["superadmin"]), getAllUsers);
 router.delete("/delete", authMiddleware, deleteUserAccount);
 // router.patch('/:id'authMiddleware,role)
 router.patch(

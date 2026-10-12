@@ -5,6 +5,66 @@ import pool from "../config/db.js";
 import express from "express";
 /*getCurrentUserProfile, updateUserProfile,deleteUserAccount,,getAllUsers,
  */
+import {sendEmail} from "../utils/sendEmail.js";
+const escapeHtml = (value = "") =>
+  String(value).replace(/[&<>"']/g, (character) => {
+    const entities = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    };
+
+    return entities[character];
+  });
+
+const sendWardOfficialStatusEmail = async ({
+  user,
+  status,
+  rejectionReason,
+}) => {
+  const username = escapeHtml(user.username || "there");
+
+  let subject;
+  let message;
+
+  if (status === "active") {
+    subject = "Your CivicFix account has been approved";
+
+    message = `
+      <h2>Account Approved</h2>
+      <p>Hello ${username},</p>
+      <p>Your CivicFix Ward Official account has been approved.</p>
+      <p>You can now sign in to CivicFix using your account credentials.</p>
+      <p>Thank you for supporting your community.</p>
+      <p>Regards,<br />CivicFix Team</p>
+    `;
+  } else if (status === "rejected") {
+    subject = "Update regarding your CivicFix account";
+
+    const reason = rejectionReason
+      ? `<p><strong>Reason:</strong> ${escapeHtml(rejectionReason)}</p>`
+      : "";
+
+    message = `
+      <h2>Account Registration Update</h2>
+      <p>Hello ${username},</p>
+      <p>Unfortunately, your CivicFix Ward Official registration has been rejected.</p>
+      ${reason}
+      <p>Please contact the CivicFix administration if you need further clarification.</p>
+      <p>Regards,<br />CivicFix Team</p>
+    `;
+  } else {
+    return;
+  }
+
+  await sendEmail({
+    to: user.email,
+    subject,
+    html: message,
+  });
+};
 export const getCurrentUser = asyncHandler(async (req, res) => {
   const userId = req.user.id;
   try {
@@ -127,11 +187,7 @@ export const getAllUsers = asyncHandler(async (req, res) => {
       `SELECT id,
       username,
       email,
-      phone_number,
-      cnic_number,
-      address,
       role,
-      verification_id,
      approved_at,
      approved_by,
      rejection_reason,
@@ -353,6 +409,35 @@ export const updateUserById = asyncHandler(async (req, res) => {
         userId,
       ],
     );
+    // Send an email only when a pending Ward Official's
+// account transitions to approved or rejected.
+const isWardOfficial = user.role === "ward_official";
+
+const wasPending = user.account_status === "pending";
+
+const statusChangedToFinalState = [
+  "active",
+  "rejected",
+].includes(updatedAccountStatus);
+
+if (
+  isWardOfficial &&
+  wasPending &&
+  statusChangedToFinalState
+) {
+  try {
+    await sendWardOfficialStatusEmail({
+      user: updatedUser.rows[0],
+      status: updatedAccountStatus,
+      rejectionReason: updatedRejectionReason,
+    });
+  } catch (emailError) {
+    console.error(
+      "Failed to send Ward Official status email:",
+      emailError.message
+    );
+  }
+}
     return res
       .status(200)
       .json(
@@ -397,7 +482,7 @@ export const deleteUserById = asyncHandler(async (req, res) => {
     }
     if (permanent === "true") {
       await pool.query(`DELETE FROM users WHERE id=$1`, [userId]);
-     return res
+      return res
         .status(200)
         .json(new apiResponseHandler(200, "User Account permenently deleted!"));
     }
@@ -417,7 +502,7 @@ export const deleteUserById = asyncHandler(async (req, res) => {
      account_status,
      is_active,
      updated_at`,
-      [userId]
+      [userId],
     );
     return res
       .status(200)

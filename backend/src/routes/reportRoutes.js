@@ -12,12 +12,13 @@ import {
   getWardReports,
   updateReportStatus,
   getReportStatusHistory,
+  assignReportToWard,
 } from "../controllers/reportController.js";
 import {
   uploadReportImage,
   getReportImageById,
   getReportImages,
-  deleteReportImages
+  deleteReportImages,
 } from "../controllers/reportImageController.js";
 const router = Router();
 // {{CREATING REPORTS}}
@@ -45,6 +46,12 @@ router.patch(
   userRoleMiddleware(["ward_official", "superadmin"]),
   updateReportStatus,
 );
+router.patch(
+  "/:reportId/assign-ward",
+  authMiddleware,
+  userRoleMiddleware(["superadmin"]),
+  assignReportToWard,
+);
 router.get("/:reportId/status-history", authMiddleware, getReportStatusHistory);
 
 // {{Handling Reports Images here}}
@@ -55,17 +62,15 @@ router.post(
   uploadFileMiddleware.single("image"),
   uploadReportImage,
 );
-router.get(
-  "/:reportId/images",
-  authMiddleware,
-  getReportImages
-);
+router.get("/:reportId/images", authMiddleware, getReportImages);
 
 router.get("/:reportId/images/:imageId", authMiddleware, getReportImageById);
-router.delete("/:reportId/images/:imageId", authMiddleware, 
-  userRoleMiddleware([ "superadmin"]),
-  deleteReportImages);
+router.delete(
+  "/:reportId/images/:imageId",
+  authMiddleware,
+  userRoleMiddleware(["superadmin"]),
+  deleteReportImages,
+);
 // router.get("/:reportId/image", authMiddleware, getReportImage);
-
 
 export default router;

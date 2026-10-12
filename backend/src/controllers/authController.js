@@ -6,6 +6,8 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { generateRefreshToken, generateToken } from "../utils/generateToken.js";
 import { generateOtp } from "../utils/generateOtp.js";
+import { createHash, randomBytes } from "node:crypto";
+import {sendEmail} from "../utils/sendEmail.js";
 
 export const registerUser = asyncHandler(async (req, res) => {
   const {
@@ -202,22 +204,22 @@ export const loginUser = asyncHandler(async (req, res) => {
     throw new apiErrorHandler(500, "Internal Server Error");
   }
 });
+
 export const forgotPassword = asyncHandler(async (req, res) => {
   const { email } = req.body;
 
   try {
     // 1. Validate email
-    if (!email) {
+    if (typeof email !== "string" || !email.trim()) {
       throw new apiErrorHandler(400, "Email is required");
     }
 
     // 2. Normalize email
-    const normalizedEmail = email.toLowerCase().trim();
+    const normalizedEmail = email.trim().toLowerCase();
 
     // 3. Find user
     const result = await pool.query(
-      `SELECT id, email, account_status,
-  is_active
+      `SELECT id, email, account_status, is_active
        FROM users
        WHERE email = $1
        LIMIT 1`,
@@ -229,16 +231,19 @@ export const forgotPassword = asyncHandler(async (req, res) => {
     }
 
     const user = result.rows[0];
+
     if (!user.is_active) {
       throw new apiErrorHandler(403, "Your account is inactive");
     }
 
     if (user.account_status === "suspended") {
-      throw new apiErrorHandler(403, "Your account has been suspended");
+      throw new apiErrorHandler(
+        403,
+        "Your account has been suspended",
+      );
     }
 
-    // 4. Check OTP rate limit
-    // Maximum 5 OTPs in 1 hour
+    // 4. Maximum 5 OTP requests per hour
     const rateLimitResult = await pool.query(
       `SELECT COUNT(*) AS otp_count
        FROM password_reset_otps
@@ -256,11 +261,14 @@ export const forgotPassword = asyncHandler(async (req, res) => {
       );
     }
 
+    // 5. Generate OTP
     const otp = generateOtp();
 
-    // 6. Hash OTP
+    // 6. Hash OTP and set 10-minute expiry
     const hashOtp = await bcrypt.hash(otp, 10);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    // 7. Invalidate previous unused OTPs
     await pool.query(
       `UPDATE password_reset_otps
        SET used_at = NOW()
@@ -269,33 +277,71 @@ export const forgotPassword = asyncHandler(async (req, res) => {
       [user.id],
     );
 
-    // 9. Save new OTP
-    await pool.query(
+    // 8. Save new OTP hash
+    const insertResult = await pool.query(
       `INSERT INTO password_reset_otps
-       (user_id, otp_hash, expires_at, used_at)
-       VALUES ($1, $2, $3, null)`,
+       (user_id, otp_hash, expires_at)
+       VALUES ($1, $2, $3)
+       RETURNING id`,
       [user.id, hashOtp, expiresAt],
     );
 
-    // 10. Temporary testing
-    console.log("OTP:", otp);
+    const otpRecordId = insertResult.rows[0].id;
 
-    // 11. Send response
+    // 9. Send OTP through Resend
+    try {
+      await sendEmail({
+        to: user.email,
+        subject: "CivicFix - Password Reset OTP",
+        text: `Your CivicFix password reset OTP is ${otp}.
+It expires in 10 minutes. If you did not request this, ignore this email.`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 520px; margin: auto;">
+            <h2>CivicFix Password Reset</h2>
+            <p>Use this one-time password to reset your password:</p>
+            <p style="font-size: 30px; font-weight: bold; letter-spacing: 6px;">
+              ${otp}
+            </p>
+            <p>This code expires in 10 minutes.</p>
+            <p>If you did not request this, you can ignore this email.</p>
+          </div>
+        `,
+      });
+    } catch (emailError) {
+      console.error("Resend email error:", emailError);
+
+      // Invalidate OTP if sending fails
+      await pool.query(
+        `UPDATE password_reset_otps
+         SET used_at = NOW()
+         WHERE id = $1
+           AND used_at IS NULL`,
+        [otpRecordId],
+      );
+
+      throw new apiErrorHandler(
+        502,
+        "Unable to send password reset email. Please try again later.",
+      );
+    }
+
+    // 10. Return success only after Resend accepts the request
     return res.status(200).json(
       new apiResponseHandler(200, "OTP sent successfully", {
         email: user.email,
       }),
     );
   } catch (error) {
-    console.error("Unable to send OTP:", error);
-
     if (error instanceof apiErrorHandler) {
       throw error;
     }
 
+    console.error("Unable to process password reset request:", error);
+
     throw new apiErrorHandler(500, "Internal Server Error");
   }
 });
+
 export const logoutUser = asyncHandler(async (req, res) => {
   const findUser = req.user;
   try {
@@ -375,114 +421,191 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
     throw new apiErrorHandler(500, "Internal Server Error");
   }
 });
+
 export const verifyOtp = asyncHandler(async (req, res) => {
   const { email, otp } = req.body;
-  console.log("VERIFY OTP BODY:", req.body);
-  console.log("EMAIL:", email);
-  console.log("OTP:", otp);
-  try {
-    if (!email || !otp) {
-      throw new apiErrorHandler(401, "email or otp is required");
-    }
-    const normalizedEmail = email.toLowerCase().trim();
-    const userResult = await pool.query(
-      `SELECT id, email
-   FROM users
-   WHERE email = $1
-   LIMIT 1`,
-      [normalizedEmail],
+
+  if (!email || !otp) {
+    throw new apiErrorHandler(400, "Email and OTP are required");
+  }
+
+  const normalizedEmail = email.toLowerCase().trim();
+
+  const userResult = await pool.query(
+    `SELECT id FROM users WHERE email = $1 LIMIT 1`,
+    [normalizedEmail],
+  );
+
+  if (userResult.rows.length === 0) {
+    throw new apiErrorHandler(400, "Invalid or expired OTP");
+  }
+
+  const userId = userResult.rows[0].id;
+
+  const otpResult = await pool.query(
+    `SELECT id, otp_hash, attempts
+     FROM password_reset_otps
+     WHERE user_id = $1
+       AND used_at IS NULL
+       AND expires_at > NOW()
+       AND attempts < 5
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [userId],
+  );
+
+  if (otpResult.rows.length === 0) {
+    throw new apiErrorHandler(400, "Invalid or expired OTP");
+  }
+
+  const otpRecord = otpResult.rows[0];
+  const isValidOtp = await bcrypt.compare(String(otp), otpRecord.otp_hash);
+
+  if (!isValidOtp) {
+    await pool.query(
+      `UPDATE password_reset_otps
+       SET attempts = attempts + 1
+       WHERE id = $1
+         AND used_at IS NULL
+         AND attempts < 5`,
+      [otpRecord.id],
     );
 
-    if (userResult.rows.length === 0) {
+    throw new apiErrorHandler(400, "Invalid or expired OTP");
+  }
+
+  // Generate a secure reset token.
+  const resetToken = randomBytes(32).toString("hex");
+
+  // Store only its SHA-256 hash.
+  const resetTokenHash = createHash("sha256")
+    .update(resetToken)
+    .digest("hex");
+
+  const updateResult = await pool.query(
+    `UPDATE password_reset_otps
+     SET used_at = NOW(),
+         reset_token_hash = $1,
+         reset_token_expires_at = NOW() + INTERVAL '10 minutes'
+     WHERE id = $2
+       AND used_at IS NULL
+       AND expires_at > NOW()
+       AND attempts < 5
+     RETURNING id`,
+    [resetTokenHash, otpRecord.id],
+  );
+
+  if (updateResult.rows.length === 0) {
+    throw new apiErrorHandler(400, "Invalid or expired OTP");
+  }
+
+  return res.status(200).json(
+    new apiResponseHandler(200, "OTP verified successfully", {
+      resetToken,
+      expiresIn: 600,
+    }),
+  );
+});
+
+
+
+export const resetPassword = asyncHandler(async (req, res) => {
+  const { resetToken, newPassword } = req.body;
+
+  if (!resetToken || !newPassword) {
+    throw new apiErrorHandler(
+      400,
+      "Reset token and new password are required",
+    );
+  }
+
+  if (typeof newPassword !== "string" || newPassword.length < 8) {
+    throw new apiErrorHandler(
+      400,
+      "Password must contain at least 8 characters",
+    );
+  }
+
+  if (typeof resetToken !== "string" || !/^[a-f0-9]{64}$/i.test(resetToken)) {
+    throw new apiErrorHandler(400, "Invalid or expired reset token");
+  }
+
+  const resetTokenHash = createHash("sha256")
+    .update(resetToken)
+    .digest("hex");
+
+  const passwordHash = await bcrypt.hash(newPassword, 12);
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const tokenResult = await client.query(
+      `SELECT id, user_id
+       FROM password_reset_otps
+       WHERE reset_token_hash = $1
+         AND reset_token_expires_at > NOW()
+       FOR UPDATE`,
+      [resetTokenHash],
+    );
+
+    if (tokenResult.rows.length === 0) {
+      throw new apiErrorHandler(400, "Invalid or expired reset token");
+    }
+
+    const resetRecord = tokenResult.rows[0];
+
+    const updateResult = await client.query(
+      `UPDATE users
+       SET password_hash = $1,
+           updated_at = NOW()
+       WHERE id = $2
+       RETURNING id`,
+      [passwordHash, resetRecord.user_id],
+    );
+
+    if (updateResult.rows.length === 0) {
       throw new apiErrorHandler(404, "User not found");
     }
 
-    const user = userResult.rows[0];
-    const result = await pool.query(
-      `SELECT
-    id,
-    otp_hash,
-    expires_at,
-    used_at
-   FROM password_reset_otps
-   WHERE user_id = $1
-     AND used_at IS NULL
-     AND expires_at > NOW()
-   ORDER BY created_at DESC
-   LIMIT 1`,
-      [user.id],
+    // Invalidate the reset token so it cannot be reused.
+    await client.query(
+      `UPDATE password_reset_otps
+       SET reset_token_hash = NULL,
+           reset_token_expires_at = NULL
+       WHERE id = $1`,
+      [resetRecord.id],
     );
-    if (result.rows.length === 0) {
-      throw new apiErrorHandler(401, "Invaild or Expired Otp");
-    }
-    const getOtp = result.rows[0];
-    // const getOtp = result.rows[0];
 
-    console.log("OTP RECORD:", getOtp);
-    console.log("OTP HASH:", getOtp.otp_hash);
-    const isValidOtp = await bcrypt.compare(otp, getOtp.otp_hash);
-    console.log("OTP VALID:", isValidOtp);
-    if (!isValidOtp) {
-      throw new apiErrorHandler(401, "Invaild or Expired Otp");
-    }
-    await pool.query(
-      `
-      UPDATE password_reset_otps
-      SET used_at=NOW()
-      WHERE id =$1
-      `,
-      [getOtp.id],
+    // Invalidate other outstanding OTP/reset-token records for this user.
+    await client.query(
+      `UPDATE password_reset_otps
+       SET used_at = COALESCE(used_at, NOW()),
+           reset_token_hash = NULL,
+           reset_token_expires_at = NULL
+       WHERE user_id = $1`,
+      [resetRecord.user_id],
     );
-    return res.json(new apiResponseHandler(200, "Otp verified successfully"));
+
+    await client.query("COMMIT");
+
+    return res.status(200).json(
+      new apiResponseHandler(200, "Password reset successfully"),
+    );
   } catch (error) {
-    console.log("Unable to verify Otp", error);
+    await client.query("ROLLBACK");
+
     if (error instanceof apiErrorHandler) {
       throw error;
     }
+
+    console.error("Unable to reset password:", error);
     throw new apiErrorHandler(500, "Internal Server Error");
+  } finally {
+    client.release();
   }
 });
-export const resetPassword = asyncHandler(async (req, res) => {
-  const { newPassword, userId } = req.body;
-  try {
-    if (!newPassword || !userId) {
-      throw new apiErrorHandler(401, "password or userId is required");
-    }
-    const password_hash = await bcrypt.hash(newPassword, 12);
-    if (newPassword.length < 8) {
-      throw new apiErrorHandler(
-        400,
-        "Password must at least contains 8 characters!",
-      );
-    }
-    const result = await pool.query(
-      `SELECT id FROM users WHERE id=$1 LIMIT 1`,
-      [userId],
-    );
-    if (result.rows.length === 0) {
-      throw new apiErrorHandler(401, "User not Found!");
-    }
-    const user = result.rows[0];
-    await pool.query(
-      `UPDATE users
-   SET password_hash = $1,
-       updated_at = NOW()
-   WHERE id = $2`,
-      [password_hash, userId],
-    );
-    return res
-      .status(200)
-      .json(new apiResponseHandler(200, "Password reset successfully"));
-  } catch (error) {
-    if (error) {
-      console.log("Unable to reset password", error);
-    }
-    if (error instanceof apiErrorHandler) {
-      throw error;
-    }
-    throw new apiErrorHandler(500, "Internal Server Error");
-  }
-});
+
 export const updatePassword = asyncHandler(async (req, res) => {
     console.log("REQ USER:", req.user);
 

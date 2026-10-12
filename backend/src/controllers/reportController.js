@@ -3,8 +3,82 @@ import apiErrorHandler from "../utils/apiErrorHandler.js";
 import apiResponseHandler from "../utils/apiResponseHandler.js";
 import { findWardLocation } from "../utils/findWardLocation.js";
 import { createNotification } from "../utils/notificationGenerator.js";
-
+import { sendEmail } from "../utils/sendEmail.js";
+import booleanPointInPolygon from "@turf/boolean-point-in-polygon";
+import { point } from "@turf/helpers";
 import pool from "../config/db.js";
+const escapeHtml = (value = "") =>
+  String(value).replace(/[&<>"']/g, (character) => {
+    const entities = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    };
+
+    return entities[character];
+  });
+
+const sendReportStatusEmail = async ({ email, category, status, reportId }) => {
+  const statusText = {
+    in_progress: "In Progress",
+    resolved: "Resolved",
+  };
+
+  const displayStatus = statusText[status];
+
+  if (!displayStatus) {
+    return;
+  }
+
+  const isResolved = status === "resolved";
+
+  const subject = isResolved
+    ? "Your CivicFix report has been resolved"
+    : "Work has started on your CivicFix report";
+
+  const html = `
+    <h2>${isResolved ? "Report Resolved" : "Report In Progress"}</h2>
+
+    <p>Hello,</p>
+
+    <p>
+      There is an update to your CivicFix report.
+    </p>
+
+    <p>
+      <strong>Report category:</strong>
+      ${escapeHtml(category)}
+    </p>
+
+    <p>
+      <strong>New status:</strong>
+      ${displayStatus}
+    </p>
+
+    <p>
+      <strong>Report ID:</strong>
+      ${escapeHtml(reportId)}
+    </p>
+
+    <p>
+      ${
+        isResolved
+          ? "The issue has been marked as resolved. Thank you for helping improve your community."
+          : "The relevant ward team has started working on the reported issue."
+      }
+    </p>
+
+    <p>Regards,<br />CivicFix Team</p>
+  `;
+
+  return sendEmail({
+    to: email,
+    subject,
+    html,
+  });
+};
 export const createReport = asyncHandler(async (req, res) => {
   const { category, description, longitude, latitude, address } = req.body;
 
@@ -42,11 +116,8 @@ export const createReport = asyncHandler(async (req, res) => {
       throw new apiErrorHandler(400, "Longitude must be between -180 and 180");
     }
     const updatedCategory = category.trim().toLowerCase();
-    const wardId = await findWardLocation(updatedLongitude, updatedLatitude);
-
-    if (!wardId) {
-      throw new apiErrorHandler(400, "Your location is outside all wards");
-    }
+    const wardId =
+  (await findWardLocation(updatedLongitude, updatedLatitude)) ?? null;
     const createdReport = await pool.query(
       `INSERT INTO reports (
       ward_id,
@@ -89,7 +160,6 @@ export const createReport = asyncHandler(async (req, res) => {
           createdReport.rows[0],
         ),
       );
-      
   } catch (error) {
     console.log("Unable to create report:", error);
 
@@ -537,6 +607,20 @@ export const getWardReports = asyncHandler(async (req, res) => {
     if (!wardId) {
       throw new apiErrorHandler(400, "Ward Id is required ");
     }
+    if (req.user.role !== "superadmin") {
+      const wardResult = await pool.query(
+        `SELECT id 
+        FROM
+         wards
+          WHERE id=$1 
+          AND 
+          official_id=$2`,
+        [wardId, req.user.id],
+      );
+      if (wardResult.rows.length === 0) {
+        throw new apiErrorHandler(403, "You are not assigned to this ward");
+      }
+    }
     const result = await pool.query(
       `SELECT 
       id,
@@ -591,6 +675,49 @@ export const updateReportStatus = asyncHandler(async (req, res) => {
       throw new apiErrorHandler(404, "report status is required ");
     }
     // const findedReport = result.rows[0];
+    const reportResult = await pool.query(
+      `SELECT id,ward_id FROM reports WHERE d=$1 AND deleted_at IS NULL`,
+      [reportId],
+    );
+    if (reportResult.rows.length === 0) {
+      throw new apiErrorHandler(404, "No report found");
+    }
+    const report = reportResult.rows[0];
+    const { reportId } = req.params;
+
+const macthedReportResult = await pool.query(
+  `SELECT id, ward_id
+   FROM reports
+   WHERE id = $1
+     AND deleted_at IS NULL`,
+  [reportId],
+);
+
+if (reportResult.rows.length === 0) {
+  throw new apiErrorHandler(404, "Report not found");
+}
+
+const matchedReport = reportResult.rows[0];
+
+if (req.user.role !== "superadmin") {
+  const wardResult = await pool.query(
+    `SELECT id
+     FROM wards
+     WHERE id = $1
+       AND official_id = $2`,
+    [report.ward_id, req.user.id],
+  );
+
+  if (wardResult.rows.length === 0) {
+    throw new apiErrorHandler(
+      403,
+      "You are not authorized to update reports in this ward",
+    );
+  }
+}
+
+// Is check ke baad tumhari existing status-update
+// aur status-history logic chalegi.
     const result = await pool.query(
       `SELECT
        id,
@@ -666,30 +793,62 @@ export const updateReportStatus = asyncHandler(async (req, res) => {
       [reportId, currentStatus, newStatus, req.user.id],
     );
     if (findedReport.user_id !== req.user.id) {
-  if (newStatus === "resolved") {
-    await createNotification({
-      userId: findedReport.user_id,
-      reportId: findedReport.id,
-      type: "report_resolved",
-      title: "Report resolved",
-      message: "Your report has been resolved.",
-    });
-  } else {
-    const statusText = {
-      pending: "Pending",
-      in_progress: "In Progress",
-      resolved: "Resolved",
-    };
+      if (newStatus === "resolved") {
+        await createNotification({
+          userId: findedReport.user_id,
+          reportId: findedReport.id,
+          type: "report_resolved",
+          title: "Report resolved",
+          message: "Your report has been resolved.",
+        });
+      } else {
+        const statusText = {
+          pending: "Pending",
+          in_progress: "In Progress",
+          resolved: "Resolved",
+        };
 
-    await createNotification({
-      userId: findedReport.user_id,
-      reportId: findedReport.id,
-      type: "report_status_changed",
-      title: "Report status updated",
-      message: `Your report status has been changed to ${statusText[newStatus]}.`,
-    });
-  }
-}
+        await createNotification({
+          userId: findedReport.user_id,
+          reportId: findedReport.id,
+          type: "report_status_changed",
+          title: "Report status updated",
+          message: `Your report status has been changed to ${statusText[newStatus]}.`,
+        });
+      }
+    }
+    // Send an email to the citizen when the report status changes.
+    if (["in_progress", "resolved"].includes(newStatus)) {
+      try {
+        const citizenResult = await pool.query(
+          `
+        SELECT email
+        FROM users
+        WHERE id = $1
+          AND is_active = TRUE
+      `,
+          [findedReport.user_id],
+        );
+
+        if (citizenResult.rows.length > 0) {
+          await sendReportStatusEmail({
+            email: citizenResult.rows[0].email,
+            category: findedReport.category,
+            status: newStatus,
+            reportId: findedReport.id,
+          });
+        } else {
+          console.warn(
+            "Report status email skipped: citizen not found or inactive.",
+          );
+        }
+      } catch (emailError) {
+        console.error(
+          "Failed to send report status email:",
+          emailError.message,
+        );
+      }
+    }
     return res.json(
       new apiResponseHandler(200, "Status updated successfully", {
         report: updatedReportStatus.rows[0],
@@ -809,4 +968,83 @@ export const getReportStatusHistory = asyncHandler(async (req, res) => {
       "Internal server error while fetching status history",
     );
   }
+});
+
+export const assignReportToWard = asyncHandler(async (req, res) => {
+  const { reportId } = req.params;
+  const { ward_id } = req.body;
+
+  // Only Superadmin can manually assign reports.
+  if (req.user?.role !== "superadmin") {
+    throw new apiErrorHandler(403, "Only Superadmin can assign reports to wards");
+  }
+
+  if (!reportId || !ward_id) {
+    throw new apiErrorHandler(400, "Report ID and ward_id are required");
+  }
+
+  // Find the report and its location.
+  const reportResult = await pool.query(
+    `SELECT id, ward_id, latitude, longitude
+     FROM reports
+     WHERE id = $1`,
+    [reportId]
+  );
+
+  if (reportResult.rows.length === 0) {
+    throw new apiErrorHandler(404, "Report not found");
+  }
+
+  const report = reportResult.rows[0];
+
+  // Find the selected ward's boundary.
+  const wardResult = await pool.query(
+    `SELECT id, ward_name, boundary_geojson
+     FROM wards
+     WHERE id = $1`,
+    [ward_id]
+  );
+
+  if (wardResult.rows.length === 0) {
+    throw new apiErrorHandler(404, "Selected ward not found");
+  }
+
+  const ward = wardResult.rows[0];
+
+  // Verify that the report's coordinates fall inside this ward.
+  const reportPoint = point([
+    Number(report.longitude),
+    Number(report.latitude)
+  ]);
+
+  const isInsideWard = booleanPointInPolygon(
+    reportPoint,
+    ward.boundary_geojson
+  );
+
+  if (!isInsideWard) {
+    throw new apiErrorHandler(
+      400,
+      "The selected ward does not cover this report's location"
+    );
+  }
+
+  // Assign the report to the selected ward.
+  const updatedReport = await pool.query(
+    `UPDATE reports
+     SET ward_id = $1,
+         updated_at = NOW()
+     WHERE id = $2
+     RETURNING id, ward_id, user_id, category, description,
+               latitude, longitude, address, status, updated_at`,
+    [ward.id, reportId]
+  );
+
+  return res.status(200).json(
+    new apiResponseHandler(
+      200,
+      "Report assigned to ward successfully",
+      updatedReport.rows[0]
+    )
+  );
 });

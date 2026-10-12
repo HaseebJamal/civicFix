@@ -8,7 +8,9 @@ import commentRouter from "./routes/commentRoutes.js";
 import upvotedRouter from "./routes/upvoteRoutes.js";
 import notificationRouter from "./routes/notificationRoutes.js";
 import errorMiddleware from "./middlewares/errorHandlerMiddleware.js";
+
 import cookieParser from "cookie-parser";
+
 dotenv.config();
 const app = express();
 app.use(express.json());
