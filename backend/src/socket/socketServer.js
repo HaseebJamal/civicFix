@@ -1,8 +1,6 @@
-
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import pool from "../config/db.js";
-
 // Read a specific cookie without an additional package.
 const getCookie = (cookieHeader, name) => {
   const cookies = (cookieHeader || "").split(";");
