@@ -1,4 +1,4 @@
-import { Feed } from "../Reports/Feed";
+import { Feed } from "../Reports/Feed.jsx";
 import MapView from "../../components/common/MapView";
 const CitizenDashboard = () => {
   return (

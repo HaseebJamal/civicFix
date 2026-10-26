@@ -1,7 +1,7 @@
 import HeroSection from "../../components/common/HeroSection";
 import HeroCard from "../../components/common/HeroCard";
 import HowItWorks from "../../components/common/HowItWorks";
-import CallToAction from "../../components/common/callToAction";
+import CallToAction from "../../components/common/CallToAction";
 
 // import MapView from "../../components/common/MapView";
 
