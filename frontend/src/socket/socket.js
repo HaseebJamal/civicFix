@@ -1,15 +1,16 @@
 
 import { io } from "socket.io-client";
 
-const socketUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const socketUrl = window.location.origin;
 
 export const socket = io(socketUrl, {
+  path: "/socket.io/",
   autoConnect: false,
   withCredentials: true,
 });
 
 socket.on("connect", () => {
-  console.info(`[Socket] Connected to ${socketUrl} (id: ${socket.id})`);
+  console.info(`[Socket] Connected (id: ${socket.id})`);
 });
 
 socket.on("connect_error", (error) => {
