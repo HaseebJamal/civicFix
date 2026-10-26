@@ -314,7 +314,7 @@ const MapView = ({
 
         if (mounted) {
           setError(
-            "Reports load nahi ho sakin. API response check karein."
+            "Unable to Load Reports . API response check."
           );
         }
       } finally {
