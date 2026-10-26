@@ -2,7 +2,8 @@ import pool from "../config/db.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import apiErrorHandler from "../utils/apiErrorHandler.js";
 import apiResponseHandler from "../utils/apiResponseHandler.js";
-import {createNotification} from "../utils/notificationGenerator.js"
+import { createNotification } from "../utils/notificationGenerator.js";
+import { getIO } from "../socket/socketServer.js";
 export const createUpvotes = asyncHandler(async (req, res) => {
   const userId = req.user?.id;
   const { reportId } = req.params;
@@ -58,6 +59,11 @@ export const createUpvotes = asyncHandler(async (req, res) => {
       RETURNING id,user_id,report_id,created_at`,
       [userId, reportId],
     );
+    const io = getIO();
+
+    io.to("public:trending").emit("trending:updated", {
+      reportId,
+    });
     if (userId !== report.user_id) {
       await createNotification({
         userId: report.user_id,
@@ -166,6 +172,11 @@ export const deleteUpvotes = asyncHandler(async (req, res) => {
        `,
       [reportId],
     );
+    const io = getIO();
+
+    io.to("public:trending").emit("trending:updated", {
+      reportId,
+    });
     if (result.rows.length === 0) {
       throw new apiErrorHandler(404, "No reports are found");
     }

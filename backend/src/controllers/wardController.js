@@ -2,6 +2,7 @@ import asyncHandler from "../utils/asyncHandler.js";
 import apiErrorHandler from "../utils/apiErrorHandler.js";
 import apiResponseHandler from "../utils/apiResponseHandler.js";
 import pool from "../config/db.js";
+import createAuditLog from "../utils/createAuditLog.js";
 export const createWard = asyncHandler(async (req, res) => {
   const { ward_name, description, boundary_geojson, official_id } = req.body;
   try {
@@ -110,6 +111,16 @@ export const createWard = asyncHandler(async (req, res) => {
         official_id || null,
       ],
     );
+    await createAuditLog({
+      actor: req.user,
+      action: "ward_created",
+      targetType: "ward",
+      targetId: createWard.rows[0].id,
+      targetName: createWard.rows[0].ward_name,
+      description: `Created ward ${createWard.rows[0].ward_name}.`,
+      metadata: { official_id: createWard.rows[0].official_id },
+      ipAddress: req.ip,
+    });
 
     return res
       .status(201)
@@ -208,6 +219,16 @@ export const deleteWard = asyncHandler(async (req, res) => {
          updated_at`,
       [wardId],
     );
+    await createAuditLog({
+      actor: req.user,
+      action: "ward_deleted",
+      targetType: "ward",
+      targetId: deleteWard.rows[0].id,
+      targetName: deleteWard.rows[0].ward_name,
+      description: `Deleted ward ${deleteWard.rows[0].ward_name}.`,
+      metadata: { official_id: deleteWard.rows[0].official_id },
+      ipAddress: req.ip,
+    });
 
     return res
       .status(200)
@@ -236,12 +257,18 @@ export const deleteWard = asyncHandler(async (req, res) => {
 export const getAllWards = asyncHandler(async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id,
-      ward_name,
-      description,
-      boundary_geojson
-      ,created_at,
-      updated_at FROM wards`
+      `SELECT wards.id,
+      wards.ward_name,
+      wards.description,
+      wards.boundary_geojson,
+      wards.official_id,
+      official.first_name AS official_first_name,
+      official.last_name AS official_last_name,
+      official.username AS official_username,
+      wards.created_at,
+      wards.updated_at
+      FROM wards
+      LEFT JOIN users AS official ON official.id = wards.official_id`
     );
 
     if (result.rows.length === 0) {
@@ -509,6 +536,16 @@ export const updateWardById = asyncHandler(async (req, res) => {
         wardId
       ],
     );
+    await createAuditLog({
+      actor: req.user,
+      action: "ward_updated",
+      targetType: "ward",
+      targetId: updatedWard.rows[0].id,
+      targetName: updatedWard.rows[0].ward_name,
+      description: `Updated ward ${updatedWard.rows[0].ward_name}.`,
+      metadata: { official_id: updatedWard.rows[0].official_id },
+      ipAddress: req.ip,
+    });
 
     return res
       .status(200)
@@ -659,7 +696,7 @@ export const assignWardOfficial = asyncHandler(async (req, res) => {
     if (existingOfficialId.rows.length > 0) {
       throw new apiErrorHandler(
         409,
-        "Ward official is already assigned to another ward",
+        `This official is already assigned to ${existingOfficialId.rows[0].ward_name}.`,
       );
     }
 
@@ -680,6 +717,16 @@ export const assignWardOfficial = asyncHandler(async (req, res) => {
          updated_at`,
       [official_id, wardId],
     );
+    await createAuditLog({
+      actor: req.user,
+      action: "ward_official_assigned",
+      targetType: "ward",
+      targetId: assignedOfficial.rows[0].id,
+      targetName: assignedOfficial.rows[0].ward_name,
+      description: `Assigned ${officialUser.username} to ward ${assignedOfficial.rows[0].ward_name}.`,
+      metadata: { official_id: officialUser.id },
+      ipAddress: req.ip,
+    });
 
     return res
       .status(200)
@@ -772,6 +819,16 @@ export const removeAssignedOfficial = asyncHandler(async (req, res) => {
          updated_at`,
       [wardId],
     );
+    await createAuditLog({
+      actor: req.user,
+      action: "ward_official_unassigned",
+      targetType: "ward",
+      targetId: result.rows[0].id,
+      targetName: result.rows[0].ward_name,
+      description: `Removed the assigned official from ward ${result.rows[0].ward_name}.`,
+      metadata: { official_id: result.rows[0].official_id },
+      ipAddress: req.ip,
+    });
 
     return res
       .status(200)

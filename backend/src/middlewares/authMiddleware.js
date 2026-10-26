@@ -5,22 +5,23 @@ import pool from "../config/db.js";
 
 export const authMiddleware = asyncHandler(async (req, res, next) => {
   const token =
-  req.cookies?.accessToken ||
-  req.header("Authorization")?.replace("Bearer ", "");
+    req.cookies?.accessToken ||
+    req.header("Authorization")?.replace("Bearer ", "");
 
-// console.log("COOKIES:", req.cookies);
-// console.log("AUTH HEADER:", req.header("Authorization"));
-// console.log("TOKEN:", token);
+  // console.log("COOKIES:", req.cookies);
+  // console.log("AUTH HEADER:", req.header("Authorization"));
+  // console.log("TOKEN:", token);
   try {
     if (!token) {
       throw new apiErrorHandler(401, "Unauthorized request");
     }
 
     const isValidToken = jwt.verify(token, process.env.JWT_SECRET);
-// console.log("VALID TOKEN:", isValidToken);
+    // console.log("VALID TOKEN:", isValidToken);
     const result = await pool.query(
       `SELECT
         id,
+        first_name,last_name,
         username,
         email,
         password_hash,
@@ -28,6 +29,8 @@ export const authMiddleware = asyncHandler(async (req, res, next) => {
         phone_number,
         account_status,
         address,
+        profile_image,
+  banner_image,
         is_active,
         role,
         verification_id
@@ -36,8 +39,7 @@ export const authMiddleware = asyncHandler(async (req, res, next) => {
        LIMIT 1`,
       [isValidToken.userId],
     );
-// console.log("DB USER:", result.rows);
-
+    // console.log("DB USER:", result.rows);
 
     if (result.rows.length === 0) {
       throw new apiErrorHandler(401, "Invalid access token");

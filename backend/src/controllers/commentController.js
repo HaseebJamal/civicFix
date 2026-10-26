@@ -3,6 +3,7 @@ import apiErrorHandler from "../utils/apiErrorHandler.js";
 import apiResponseHandler from "../utils/apiResponseHandler.js";
 import { createNotification } from "../utils/notificationGenerator.js";
 import pool from "../config/db.js";
+import { getIO } from "../socket/socketServer.js";
 export const createComment = asyncHandler(async (req, res) => {
   const { reportId } = req.params;
   const userId = req.user?.id;
@@ -61,6 +62,38 @@ export const createComment = asyncHandler(async (req, res) => {
       `,
       [reportId, userId, content.trim()],
     );
+    const io = getIO();
+
+    io.to("public:trending").emit("trending:updated", {
+      reportId,
+    });
+    const commentResult = await pool.query(
+      `SELECT
+     c.id,
+     c.report_id,
+     c.user_id,
+     c.content,
+     c.created_at,
+     c.updated_at,
+     u.username,
+     u.first_name,
+     u.last_name,
+     u.profile_image
+   FROM comments c
+   LEFT JOIN users u ON u.id = c.user_id
+   WHERE c.id = $1`,
+      [insertComment.rows[0].id],
+    );
+
+    return res
+      .status(201)
+      .json(
+        new apiResponseHandler(
+          201,
+          "Comment added successfully.",
+          commentResult.rows[0],
+        ),
+      );
     if (userId !== existingReport.user_id) {
       await createNotification({
         userId: existingReport.user_id,
@@ -273,4 +306,54 @@ export const updateComment = asyncHandler(async (req, res) => {
       "Internal Server error occur during updating comments",
     );
   }
+});
+
+export const getComments = asyncHandler(async (req, res) => {
+  const { reportId } = req.params;
+
+  if (!reportId) {
+    throw new apiErrorHandler(400, "Report ID is required.");
+  }
+
+  // Verify that the report exists and has not been deleted.
+  const reportResult = await pool.query(
+    `SELECT id
+     FROM reports
+     WHERE id = $1 AND deleted_at IS NULL`,
+    [reportId],
+  );
+
+  if (reportResult.rows.length === 0) {
+    throw new apiErrorHandler(404, "Report not found.");
+  }
+
+  // Fetch comments with their authors' profile information.
+  const result = await pool.query(
+    `SELECT
+       c.id,
+       c.report_id,
+       c.user_id,
+       c.content,
+       c.created_at,
+       c.updated_at,
+       u.username,
+       u.first_name,
+       u.last_name,
+       u.profile_image
+     FROM comments c
+     LEFT JOIN users u ON u.id = c.user_id
+     WHERE c.report_id = $1
+     ORDER BY c.created_at ASC`,
+    [reportId],
+  );
+
+  return res
+    .status(200)
+    .json(
+      new apiResponseHandler(
+        200,
+        "Comments fetched successfully.",
+        result.rows,
+      ),
+    );
 });

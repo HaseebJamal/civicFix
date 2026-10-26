@@ -7,10 +7,12 @@ import jwt from "jsonwebtoken";
 import { generateRefreshToken, generateToken } from "../utils/generateToken.js";
 import { generateOtp } from "../utils/generateOtp.js";
 import { createHash, randomBytes } from "node:crypto";
-import {sendEmail} from "../utils/sendEmail.js";
+import { sendEmail } from "../utils/sendEmail.js";
 
 export const registerUser = asyncHandler(async (req, res) => {
   const {
+    first_name,
+    last_name,
     username,
     email,
     password,
@@ -21,21 +23,45 @@ export const registerUser = asyncHandler(async (req, res) => {
   } = req.body;
 
   try {
+    const registrationSetting = await pool.query(
+      `SELECT setting_value
+       FROM site_settings
+       WHERE setting_key = $1
+       LIMIT 1`,
+      ["allow_registration"],
+    );
+
+    if (registrationSetting.rows[0]?.setting_value === "false") {
+      throw new apiErrorHandler(
+        403,
+        "New registrations are currently disabled.",
+      );
+    }
+
     if (
+      !first_name ||
+      !last_name ||
       !username ||
       !email ||
       !password ||
       !role ||
-      !phone_number ||
-      !address ||
       !cnic_number
     ) {
+      console.log("First Name",first_name)
+      console.log("First Name",last_name)
+      console.log("user Name",username)
+      console.log("email",email)
+      console.log("passwrod",password)
+      console.log("role",role)
+      console.log("Cnic Number",cnic_number)
       throw new apiErrorHandler(400, "All fields are required");
     }
     const allowedRoles = ["citizen", "ward_official"];
     if (!allowedRoles.includes(role)) {
       throw new apiErrorHandler(400, "Invalid Role");
     }
+    const normalizedFirstName = first_name.toLowerCase().trim();
+    const normalizedLastName = last_name.toLowerCase().trim();
     const normalizedEmail = email.toLowerCase().trim();
     const normalizedUserName = username.toLowerCase().trim();
     const existingUser = await pool.query(
@@ -64,7 +90,9 @@ export const registerUser = asyncHandler(async (req, res) => {
     const accountStatus = role === "ward_official" ? "pending" : "active";
     const result = await pool.query(
       `INSERT INTO users (
-        username,
+      first_name,
+      last_name,  
+      username,
         email,
         password_hash,
         phone_number,
@@ -73,9 +101,11 @@ export const registerUser = asyncHandler(async (req, res) => {
         role,
         account_status
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8,$9,$10)
       RETURNING
         id,
+        first_name,
+        last_name,
         username,
         email,
         role,
@@ -86,6 +116,8 @@ export const registerUser = asyncHandler(async (req, res) => {
         verification_id,
         is_active`,
       [
+        normalizedFirstName,
+        normalizedLastName,
         normalizedUserName,
         normalizedEmail,
         password_hash,
@@ -131,7 +163,7 @@ export const registerUser = asyncHandler(async (req, res) => {
 
 export const loginUser = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
-  console.log("LOGIN BODY:", req.body);
+  // console.log("LOGIN BODY:", req.body);
 
   try {
     if (!email || !password) {
@@ -141,12 +173,16 @@ export const loginUser = asyncHandler(async (req, res) => {
     const result = await pool.query(
       `SELECT
       id,
+      first_name,
+      last_name,
       username,
       email,
       password_hash,
       phone_number,
       cnic_number,
       address,
+      profile_image,
+      banner_image,
       account_status,
       role,
       verification_id,
@@ -219,7 +255,10 @@ export const forgotPassword = asyncHandler(async (req, res) => {
 
     // 3. Find user
     const result = await pool.query(
-      `SELECT id, email, account_status, is_active
+      `SELECT id,
+       email, 
+       account_status,
+        is_active
        FROM users
        WHERE email = $1
        LIMIT 1`,
@@ -237,10 +276,7 @@ export const forgotPassword = asyncHandler(async (req, res) => {
     }
 
     if (user.account_status === "suspended") {
-      throw new apiErrorHandler(
-        403,
-        "Your account has been suspended",
-      );
+      throw new apiErrorHandler(403, "Your account has been suspended");
     }
 
     // 4. Maximum 5 OTP requests per hour
@@ -253,7 +289,11 @@ export const forgotPassword = asyncHandler(async (req, res) => {
     );
 
     const otpCount = Number(rateLimitResult.rows[0].otp_count);
-
+    // console.log("FORGOT PASSWORD RATE LIMIT:", {
+    //   email: user.email,
+    //   userId: user.id,
+    //   otpCount,
+    // });
     if (otpCount >= 5) {
       throw new apiErrorHandler(
         429,
@@ -306,6 +346,22 @@ It expires in 10 minutes. If you did not request this, ignore this email.`,
             <p>If you did not request this, you can ignore this email.</p>
           </div>
         `,
+      });
+      const resetSessionToken = jwt.sign(
+        {
+          userId: user.id,
+          otpRecordId,
+        },
+        process.env.PASSWORD_RESET_TOKEN_SECRET,
+        { expiresIn: "10m" },
+      );
+
+      res.cookie("passwordResetSession", resetSessionToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+        maxAge: 10 * 60 * 1000,
+        path: "/",
       });
     } catch (emailError) {
       console.error("Resend email error:", emailError);
@@ -376,7 +432,7 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
     );
     const result = await pool.query(
       `SELECT
-    id,
+    id,first_name,last_name,
     username,
     password_hash,
     phone_number,
@@ -384,6 +440,8 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
     role,
     verification_id
     ,address,
+    profile_image,
+banner_image,
     account_status,
     is_active
      FROM users WHERE id =$1  LIMIT 1
@@ -423,35 +481,34 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
 });
 
 export const verifyOtp = asyncHandler(async (req, res) => {
-  const { email, otp } = req.body;
+  const { otp } = req.body;
+  const resetSession = req.cookies?.passwordResetSession;
 
-  if (!email || !otp) {
-    throw new apiErrorHandler(400, "Email and OTP are required");
+  if (typeof otp !== "string" || !otp.trim() || !resetSession) {
+    throw new apiErrorHandler(400, "OTP is required");
   }
 
-  const normalizedEmail = email.toLowerCase().trim();
+  let session;
 
-  const userResult = await pool.query(
-    `SELECT id FROM users WHERE email = $1 LIMIT 1`,
-    [normalizedEmail],
-  );
-
-  if (userResult.rows.length === 0) {
-    throw new apiErrorHandler(400, "Invalid or expired OTP");
+  try {
+    session = jwt.verify(resetSession, process.env.PASSWORD_RESET_TOKEN_SECRET);
+  } catch {
+    throw new apiErrorHandler(
+      400,
+      "OTP session expired. Please request a new OTP.",
+    );
   }
-
-  const userId = userResult.rows[0].id;
 
   const otpResult = await pool.query(
-    `SELECT id, otp_hash, attempts
+    `SELECT id, user_id, otp_hash, attempts
      FROM password_reset_otps
-     WHERE user_id = $1
+     WHERE id = $1
+       AND user_id = $2
        AND used_at IS NULL
        AND expires_at > NOW()
        AND attempts < 5
-     ORDER BY created_at DESC
      LIMIT 1`,
-    [userId],
+    [session.otpRecordId, session.userId],
   );
 
   if (otpResult.rows.length === 0) {
@@ -459,7 +516,8 @@ export const verifyOtp = asyncHandler(async (req, res) => {
   }
 
   const otpRecord = otpResult.rows[0];
-  const isValidOtp = await bcrypt.compare(String(otp), otpRecord.otp_hash);
+
+  const isValidOtp = await bcrypt.compare(otp.trim(), otpRecord.otp_hash);
 
   if (!isValidOtp) {
     await pool.query(
@@ -474,13 +532,9 @@ export const verifyOtp = asyncHandler(async (req, res) => {
     throw new apiErrorHandler(400, "Invalid or expired OTP");
   }
 
-  // Generate a secure reset token.
   const resetToken = randomBytes(32).toString("hex");
 
-  // Store only its SHA-256 hash.
-  const resetTokenHash = createHash("sha256")
-    .update(resetToken)
-    .digest("hex");
+  const resetTokenHash = createHash("sha256").update(resetToken).digest("hex");
 
   const updateResult = await pool.query(
     `UPDATE password_reset_otps
@@ -488,16 +542,24 @@ export const verifyOtp = asyncHandler(async (req, res) => {
          reset_token_hash = $1,
          reset_token_expires_at = NOW() + INTERVAL '10 minutes'
      WHERE id = $2
+       AND user_id = $3
        AND used_at IS NULL
        AND expires_at > NOW()
        AND attempts < 5
      RETURNING id`,
-    [resetTokenHash, otpRecord.id],
+    [resetTokenHash, otpRecord.id, session.userId],
   );
 
   if (updateResult.rows.length === 0) {
     throw new apiErrorHandler(400, "Invalid or expired OTP");
   }
+
+  res.clearCookie("passwordResetSession", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    path: "/",
+  });
 
   return res.status(200).json(
     new apiResponseHandler(200, "OTP verified successfully", {
@@ -507,16 +569,11 @@ export const verifyOtp = asyncHandler(async (req, res) => {
   );
 });
 
-
-
 export const resetPassword = asyncHandler(async (req, res) => {
   const { resetToken, newPassword } = req.body;
 
   if (!resetToken || !newPassword) {
-    throw new apiErrorHandler(
-      400,
-      "Reset token and new password are required",
-    );
+    throw new apiErrorHandler(400, "Reset token and new password are required");
   }
 
   if (typeof newPassword !== "string" || newPassword.length < 8) {
@@ -530,9 +587,7 @@ export const resetPassword = asyncHandler(async (req, res) => {
     throw new apiErrorHandler(400, "Invalid or expired reset token");
   }
 
-  const resetTokenHash = createHash("sha256")
-    .update(resetToken)
-    .digest("hex");
+  const resetTokenHash = createHash("sha256").update(resetToken).digest("hex");
 
   const passwordHash = await bcrypt.hash(newPassword, 12);
   const client = await pool.connect();
@@ -589,9 +644,9 @@ export const resetPassword = asyncHandler(async (req, res) => {
 
     await client.query("COMMIT");
 
-    return res.status(200).json(
-      new apiResponseHandler(200, "Password reset successfully"),
-    );
+    return res
+      .status(200)
+      .json(new apiResponseHandler(200, "Password reset successfully"));
   } catch (error) {
     await client.query("ROLLBACK");
 
@@ -607,7 +662,7 @@ export const resetPassword = asyncHandler(async (req, res) => {
 });
 
 export const updatePassword = asyncHandler(async (req, res) => {
-    console.log("REQ USER:", req.user);
+  // console.log("REQ USER:", req.user);
 
   const { currentPassword, newPassword } = req.body;
   try {

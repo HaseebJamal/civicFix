@@ -2,50 +2,41 @@ import pool from "../config/db.js";
 import asyncHandler from "../utils/asyncHandler.js";
 import apiErrorHandler from "../utils/apiErrorHandler.js";
 import apiResponseHandler from "../utils/apiResponseHandler.js";
+
 export const getNotification = asyncHandler(async (req, res) => {
   const userId = req.user?.id;
-  try {
-    console.log("USER ID", userId);
-    if (!userId) {
-      throw new apiErrorHandler(401, "User ID is required");
-    }
-    const result = await pool.query(
-      `
-      SELECT
-       id,
-       user_id,
-       report_id,
-       type,
-       title,
-       message,
-       is_read,
-       created_at FROM notifications WHERE user_id=$1
-       ORDER BY created_at DESC`,
-      [userId],
-    );
-    if (result.rows.length === 0) {
-      throw new apiErrorHandler(404, "No notification found");
-    }
-    return res
-      .status(201)
-      .json(
-        new apiResponseHandler(
-          201,
-          "Notification Fetched successfully",
-          result.rows,
-        ),
-      );
-  } catch (error) {
-    console.log("unable to fetch notifications", error);
-    if (error instanceof apiErrorHandler) {
-      throw error;
-    }
-    throw new apiErrorHandler(
-      500,
-      "Internal server error occur during fetching notification",
-    );
+
+  if (!userId) {
+    throw new apiErrorHandler(401, "User ID is required");
   }
+
+  const result = await pool.query(
+    `
+      SELECT
+        id,
+        user_id,
+        report_id,
+        type,
+        title,
+        message,
+        is_read,
+        created_at
+      FROM notifications
+      WHERE user_id = $1
+      ORDER BY created_at DESC
+    `,
+    [userId]
+  );
+
+  return res.status(200).json(
+    new apiResponseHandler(
+      200,
+      "Notifications fetched successfully",
+      result.rows
+    )
+  );
 });
+
 export const markNotificationAsRead = asyncHandler(async (req, res) => {
   const userId = req.user?.id;
   const { notificationId } = req.params;

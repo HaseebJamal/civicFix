@@ -12,7 +12,10 @@ import {
   getWardReports,
   updateReportStatus,
   getReportStatusHistory,
+  getTrendingReports,
   assignReportToWard,
+  getDeletedReports,
+  restoreReportById,
 } from "../controllers/reportController.js";
 import {
   uploadReportImage,
@@ -24,7 +27,20 @@ const router = Router();
 // {{CREATING REPORTS}}
 router.post("/", authMiddleware, createReport);
 router.get("/", authMiddleware, getAllReport);
+router.get("/trending", authMiddleware, getTrendingReports);
 router.get("/my", authMiddleware, getMyReport);
+router.get(
+  "/bin",
+  authMiddleware,
+  userRoleMiddleware(["superadmin"]),
+  getDeletedReports,
+);
+router.patch(
+  "/:reportId/restore",
+  authMiddleware,
+  userRoleMiddleware(["superadmin"]),
+  restoreReportById,
+);
 router.get("/:reportId", authMiddleware, getReportById);
 router.delete(
   "/:reportId",

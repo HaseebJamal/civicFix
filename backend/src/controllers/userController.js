@@ -3,9 +3,50 @@ import apiErrorHandler from "../utils/apiErrorHandler.js";
 import apiResponseHandler from "../utils/apiResponseHandler.js";
 import pool from "../config/db.js";
 import express from "express";
+import bcrypt from "bcrypt";
 /*getCurrentUserProfile, updateUserProfile,deleteUserAccount,,getAllUsers,
  */
-import {sendEmail} from "../utils/sendEmail.js";
+import { sendEmail } from "../utils/sendEmail.js";
+import createAuditLog from "../utils/createAuditLog.js";
+const VERIFIABLE_OFFICIAL_ROLES = new Set([
+  "ward_official",
+  "official",
+  "department_official",
+  "department",
+]);
+
+export const ensureVerifiableOfficial = asyncHandler(
+  async (req, res, next) => {
+    const { userId } = req.params;
+
+    if (!userId) {
+      throw new apiErrorHandler(400, "User Id is required");
+    }
+
+    const result = await pool.query(
+      "SELECT role FROM users WHERE id = $1 LIMIT 1",
+      [userId],
+    );
+
+    if (result.rows.length === 0) {
+      throw new apiErrorHandler(404, "User not found");
+    }
+
+    if (
+      !VERIFIABLE_OFFICIAL_ROLES.has(
+        String(result.rows[0].role || "").toLowerCase(),
+      )
+    ) {
+      throw new apiErrorHandler(
+        403,
+        "Only ward officials and officials can be verified here.",
+      );
+    }
+
+    next();
+  },
+);
+
 const escapeHtml = (value = "") =>
   String(value).replace(/[&<>"']/g, (character) => {
     const entities = {
@@ -73,6 +114,8 @@ export const getCurrentUser = asyncHandler(async (req, res) => {
     }
     const result = await pool.query(
       `SELECT id ,
+      first_name,
+      last_name,
       username,
       phone_number,
       cnic_number,
@@ -81,7 +124,11 @@ export const getCurrentUser = asyncHandler(async (req, res) => {
       account_status,
       address,
       email,
-      verification_id ,created_at,updated_at
+      verification_id,
+      profile_image,
+      banner_image,
+      created_at,
+      updated_at
       FROM users WHERE id=$1 LIMIT 1`,
       [userId],
     );
@@ -102,82 +149,195 @@ export const getCurrentUser = asyncHandler(async (req, res) => {
 });
 export const updateCurrentUserAccount = asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const { username, email, phone_number, address } = req.body;
+
+  const {
+    first_name,
+    last_name,
+    username,
+    email,
+    phone_number,
+    cnic_number,
+    address,
+    password,
+    profile_image,
+    banner_image,
+  } = req.body;
 
   try {
     if (!userId) {
       throw new apiErrorHandler(400, "User Id is required");
     }
 
-    if (!username && !email && !phone_number && !address) {
-      throw new apiErrorHandler(400, "At least one field is required!");
-    }
-
+    // Get current user
     const result = await pool.query(
-      `SELECT id,
-      username,
-      phone_number,
-      address,
-      email
-      FROM users WHERE id=$1 LIMIT 1`,
-      [userId],
+      `
+      SELECT
+        id,
+        first_name,
+        last_name,
+        username,
+        email,
+        phone_number,
+        cnic_number,
+        address,
+        password_hash,
+        profile_image,
+        banner_image
+      FROM users
+      WHERE id = $1
+      LIMIT 1
+      `,
+      [userId]
     );
 
     if (result.rows.length === 0) {
-      throw new apiErrorHandler(400, "User not Found");
+      throw new apiErrorHandler(404, "User not found");
     }
 
     const user = result.rows[0];
-    const updatedEmail = email ? email.toLowerCase().trim() : user.email;
-    const updatedUsername = username ? username.trim() : user.username;
-    const updatedAddress = address ? address.trim() : user.address;
-    const updatedPhoneNumber = phone_number
-      ? phone_number.trim()
-      : user.phone_number;
+
+    // ==========================================
+    // UPDATE VALUES
+    // ==========================================
+
+    const updatedFirstName =
+      first_name !== undefined
+        ? first_name.trim()
+        : user.first_name;
+
+    const updatedLastName =
+      last_name !== undefined
+        ? last_name.trim()
+        : user.last_name;
+
+    const updatedUsername =
+      username !== undefined
+        ? username.trim()
+        : user.username;
+
+    const updatedEmail =
+      email !== undefined
+        ? email.toLowerCase().trim()
+        : user.email;
+
+    const updatedPhoneNumber =
+      phone_number !== undefined
+        ? phone_number.trim()
+        : user.phone_number;
+
+    const updatedCnicNumber =
+      cnic_number !== undefined
+        ? cnic_number.trim()
+        : user.cnic_number;
+
+    const updatedAddress =
+      address !== undefined
+        ? address.trim()
+        : user.address;
+
+    const profileImageFile = req.files?.profileImage?.[0];
+    const coverImageFile = req.files?.coverImage?.[0];
+
+    const updatedProfileImage = profileImageFile
+      ? `/uploads/profiles/${profileImageFile.filename}`
+      : profile_image !== undefined
+        ? profile_image
+        : user.profile_image;
+
+    const updatedBannerImage = coverImageFile
+      ? `/uploads/covers/${coverImageFile.filename}`
+      : banner_image !== undefined
+        ? banner_image
+        : user.banner_image;
+
+    // ==========================================
+    // PASSWORD
+    // ==========================================
+
+    let updatedPasswordHash = user.password_hash;
+
+    if (password && password.trim()) {
+      updatedPasswordHash = await bcrypt.hash(
+        password.trim(),
+        12
+      );
+    }
+
+    // ==========================================
+    // UPDATE DATABASE
+    // ==========================================
 
     const updateUserAccount = await pool.query(
-      `UPDATE users SET
-      username=$1,
-      email=$2,
-      address=$3,
-      phone_number=$4,
-    
-      updated_at=NOW()
-      WHERE id=$5
-      RETURNING 
-      id,
-           username,
-           email,
-           phone_number,
-           address,
-           role,
-           account_status,
-           verification_id,
-           is_active,
-           created_at,
-           updated_at`,
+      `
+      UPDATE users
+      SET
+        first_name = $1,
+        last_name = $2,
+        username = $3,
+        email = $4,
+        phone_number = $5,
+        cnic_number = $6,
+        address = $7,
+        profile_image = $8,
+        banner_image = $9,
+        password_hash = $10,
+        updated_at = NOW()
+      WHERE id = $11
+
+      RETURNING
+        id,
+        first_name,
+        last_name,
+        username,
+        email,
+        phone_number,
+        cnic_number,
+        address,
+        profile_image,
+        banner_image,
+        role,
+        account_status,
+        verification_id,
+        is_active,
+        created_at,
+        updated_at
+      `,
       [
+        updatedFirstName,
+        updatedLastName,
         updatedUsername,
         updatedEmail,
-        updatedAddress,
         updatedPhoneNumber,
+        updatedCnicNumber,
+        updatedAddress,
+        updatedProfileImage,
+        updatedBannerImage,
+        updatedPasswordHash,
         userId,
-      ],
+      ]
     );
 
-    return res.json(
+    return res.status(200).json(
       new apiResponseHandler(
         200,
         "User account updated successfully",
-        updateUserAccount.rows[0],
-      ),
+        updateUserAccount.rows[0]
+      )
     );
   } catch (error) {
-    console.log("Unable to update current user account", error);
+    console.error(
+      "Unable to update current user account:",
+      error
+    );
+
     if (error instanceof apiErrorHandler) {
       throw error;
     }
-    throw new apiErrorHandler(500, "Internal Server Error");
+
+    throw new apiErrorHandler(
+      500,
+      "Internal Server Error"
+    );
   }
 });
 
@@ -185,6 +345,8 @@ export const getAllUsers = asyncHandler(async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id,
+      first_name,
+      last_name,
       username,
       email,
       role,
@@ -249,6 +411,8 @@ export const getUserById = asyncHandler(async (req, res) => {
     }
     const result = await pool.query(
       `SELECT id,
+      first_name,
+      last_name,
          username,
          email,
          phone_number,
@@ -284,6 +448,8 @@ export const updateUserById = asyncHandler(async (req, res) => {
   const { userId } = req.params;
 
   const {
+    first_name,
+    last_name,
     username,
     email,
     phone_number,
@@ -301,6 +467,8 @@ export const updateUserById = asyncHandler(async (req, res) => {
     }
 
     const hasUpdateField =
+      first_name !== undefined ||
+      last_name !== undefined ||
       username !== undefined ||
       email !== undefined ||
       phone_number !== undefined ||
@@ -321,7 +489,10 @@ export const updateUserById = asyncHandler(async (req, res) => {
     const result = await pool.query(
       `
   SELECT id
-  ,username,
+  ,
+  first_name,
+  last_name,
+  username,
   email,
   password_hash,
   phone_number,
@@ -344,6 +515,14 @@ export const updateUserById = asyncHandler(async (req, res) => {
     const updatedUserName = username
       ? username.trim().toLowerCase()
       : user.username;
+
+    const updatedFirstName = first_name
+      ? first_name.trim().toLowerCase()
+      : user.first_name;
+    const updatedLastName = last_name
+      ? last_name.trim().toLowerCase()
+      : user.last_name;
+
     const updatedEmail = email ? email.trim().toLowerCase() : user.email;
     const updatedPhoneNumber = phone_number
       ? phone_number.trim()
@@ -362,27 +541,32 @@ export const updateUserById = asyncHandler(async (req, res) => {
     const updatedIsActive =
       is_active !== undefined ? is_active : user.is_active;
 
-    const updatedRejectionReason = rejection_reason
-      ? rejection_reason.trim()
-      : user.rejection_reason;
+    const updatedRejectionReason =
+      rejection_reason !== undefined
+        ? rejection_reason.trim()
+        : user.rejection_reason;
 
     const updatedUser = await pool.query(
       `UPDATE users
    SET
-     username = $1,
-     email = $2,
-     phone_number = $3,
-     cnic_number = $4,
-     address = $5,
-     role = $6,
-     verification_id = $7,
-     account_status = $8,
-     is_active = $9,
-     rejection_reason = $10,
+   first_name=$1,
+   last_name=$2,
+     username = $3,
+     email = $4,
+     phone_number = $5,
+     cnic_number = $6,
+     address = $7,
+     role = $8,
+     verification_id = $9,
+     account_status = $10,
+     is_active = $11,
+     rejection_reason = $12,
      updated_at = NOW()
-     WHERE id = $11
+     WHERE id = $13
    RETURNING
      id,
+     first_name,
+     last_name,
      username,
      email,
      phone_number,
@@ -396,6 +580,8 @@ export const updateUserById = asyncHandler(async (req, res) => {
      created_at,
      updated_at`,
       [
+        updatedFirstName,
+        updatedLastName,
         updatedUserName,
         updatedEmail,
         updatedPhoneNumber,
@@ -409,35 +595,66 @@ export const updateUserById = asyncHandler(async (req, res) => {
         userId,
       ],
     );
+    if (req.user?.role === "superadmin") {
+      const isOfficial = [
+        "ward_official",
+        "official",
+        "department_official",
+        "department",
+      ].includes(String(user.role).toLowerCase());
+      let action = "user_updated";
+
+      if (user.account_status !== updatedAccountStatus) {
+        if (isOfficial && updatedAccountStatus === "active") {
+          action = "official_verified";
+        } else if (isOfficial && updatedAccountStatus === "rejected") {
+          action = "official_rejected";
+        } else if (updatedAccountStatus === "suspended") {
+          action = "user_blocked";
+        }
+      } else if (user.is_active !== updatedIsActive) {
+        action = updatedIsActive ? "user_unblocked" : "user_blocked";
+      }
+
+      await createAuditLog({
+        actor: req.user,
+        action,
+        targetType: "user",
+        targetId: user.id,
+        targetName: user.username,
+        description: `Superadmin updated ${user.username}'s account.`,
+        metadata: {
+          role: user.role,
+          account_status: updatedAccountStatus,
+          is_active: updatedIsActive,
+        },
+        ipAddress: req.ip,
+      });
+    }
     // Send an email only when a pending Ward Official's
-// account transitions to approved or rejected.
-const isWardOfficial = user.role === "ward_official";
+    // account transitions to approved or rejected.
+    const isWardOfficial = user.role === "ward_official";
 
-const wasPending = user.account_status === "pending";
+    const wasPending = user.account_status === "pending";
 
-const statusChangedToFinalState = [
-  "active",
-  "rejected",
-].includes(updatedAccountStatus);
-
-if (
-  isWardOfficial &&
-  wasPending &&
-  statusChangedToFinalState
-) {
-  try {
-    await sendWardOfficialStatusEmail({
-      user: updatedUser.rows[0],
-      status: updatedAccountStatus,
-      rejectionReason: updatedRejectionReason,
-    });
-  } catch (emailError) {
-    console.error(
-      "Failed to send Ward Official status email:",
-      emailError.message
+    const statusChangedToFinalState = ["active", "rejected"].includes(
+      updatedAccountStatus,
     );
-  }
-}
+
+    if (isWardOfficial && wasPending && statusChangedToFinalState) {
+      try {
+        await sendWardOfficialStatusEmail({
+          user: updatedUser.rows[0],
+          status: updatedAccountStatus,
+          rejectionReason: updatedRejectionReason,
+        });
+      } catch (emailError) {
+        console.error(
+          "Failed to send Ward Official status email:",
+          emailError.message,
+        );
+      }
+    }
     return res
       .status(200)
       .json(
@@ -465,7 +682,10 @@ export const deleteUserById = asyncHandler(async (req, res) => {
       throw new apiErrorHandler(400, "User Id is required");
     }
     const result = await pool.query(
-      `SELECT id  username,
+      `SELECT id,
+      first_name,
+      last_name,
+      username,
         email,
         role,
         account_status,
@@ -482,6 +702,16 @@ export const deleteUserById = asyncHandler(async (req, res) => {
     }
     if (permanent === "true") {
       await pool.query(`DELETE FROM users WHERE id=$1`, [userId]);
+      await createAuditLog({
+        actor: req.user,
+        action: "user_permanently_deleted",
+        targetType: "user",
+        targetId: user.id,
+        targetName: user.username,
+        description: `Superadmin permanently deleted ${user.username}'s account.`,
+        metadata: { role: user.role },
+        ipAddress: req.ip,
+      });
       return res
         .status(200)
         .json(new apiResponseHandler(200, "User Account permenently deleted!"));
@@ -496,6 +726,7 @@ export const deleteUserById = asyncHandler(async (req, res) => {
    WHERE id = $1
    RETURNING
      id,
+     first_name,last_name,
      username,
      email,
      role,
@@ -504,6 +735,16 @@ export const deleteUserById = asyncHandler(async (req, res) => {
      updated_at`,
       [userId],
     );
+    await createAuditLog({
+      actor: req.user,
+      action: "user_blocked",
+      targetType: "user",
+      targetId: user.id,
+      targetName: user.username,
+      description: `Superadmin suspended ${user.username}'s account.`,
+      metadata: { role: user.role },
+      ipAddress: req.ip,
+    });
     return res
       .status(200)
       .json(
@@ -518,6 +759,6 @@ export const deleteUserById = asyncHandler(async (req, res) => {
     if (error instanceof apiErrorHandler) {
       throw error;
     }
-    new apiErrorHandler(500, "Internal Server Error");
+    throw new apiErrorHandler(500, "Internal Server Error");
   }
 });
