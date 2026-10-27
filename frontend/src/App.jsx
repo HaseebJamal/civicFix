@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { useAuth } from "./context/AuthContext";
-import { socket } from "./socket/socket.js";
+import { socket, socketUrl } from "./socket/socket.js";
 // Public Pages
 import PublicLayout from "./components/layouts/PublicLayout";
 import DashboardLayout from "./components/layouts/DashboardLayout";
@@ -68,11 +68,7 @@ const SocketConnection = () => {
   const { user } = useAuth();
 
   useEffect(() => {
-    console.info(
-      `[Socket] Connecting to ${
-        import.meta.env.VITE_SOCKET_URL || "http://localhost:5000"
-      }`,
-    );
+    console.info(`[Socket] Connecting to ${socketUrl}`);
 
     if (!socket.connected) {
       socket.connect();
