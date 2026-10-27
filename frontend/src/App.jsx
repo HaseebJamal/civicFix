@@ -68,14 +68,15 @@ const SocketConnection = () => {
   const { user } = useAuth();
 
   useEffect(() => {
-    if (socket.connected) {
-      socket.disconnect();
-    }
-
     console.info(
-      `[Socket] Connecting to ${import.meta.env.VITE_API_URL || "http://localhost:5000"}`,
+      `[Socket] Connecting to ${
+        import.meta.env.VITE_SOCKET_URL || "http://localhost:5000"
+      }`,
     );
-    socket.connect();
+
+    if (!socket.connected) {
+      socket.connect();
+    }
 
     return () => {
       socket.disconnect();
@@ -161,16 +162,10 @@ function App() {
               />
               <Route path="/ward-official" element={<WardOfficialLayout />}>
                 <Route index element={<WardOfficialDashboard />} />
-                <Route
-                  path="reports"
-                  element={<WardReportManagement />}
-                />
+                <Route path="reports" element={<WardReportManagement />} />
                 <Route path="profile" element={<CitizenProfile />} />
                 <Route path="map" element={<WardOfficialMap />} />
-                <Route
-                  path="analytics"
-                  element={<WardOfficialAnalytics />}
-                />
+                <Route path="analytics" element={<WardOfficialAnalytics />} />
                 <Route path="notifications" element={<Notification />} />
               </Route>
             </Route>
