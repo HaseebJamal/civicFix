@@ -8,6 +8,7 @@ import bcrypt from "bcrypt";
  */
 import { sendEmail } from "../utils/sendEmail.js";
 import createAuditLog from "../utils/createAuditLog.js";
+import { uploadImage } from "../utils/cloudinary.js";
 const VERIFIABLE_OFFICIAL_ROLES = new Set([
   "ward_official",
   "official",
@@ -235,20 +236,38 @@ export const updateCurrentUserAccount = asyncHandler(async (req, res) => {
         ? address.trim()
         : user.address;
 
-    const profileImageFile = req.files?.profileImage?.[0];
-    const coverImageFile = req.files?.coverImage?.[0];
+    
+const profileImageFile = req.files?.profileImage?.[0];
+const coverImageFile = req.files?.coverImage?.[0];
 
-    const updatedProfileImage = profileImageFile
-      ? `/uploads/profiles/${profileImageFile.filename}`
-      : profile_image !== undefined
-        ? profile_image
-        : user.profile_image;
+let updatedProfileImage =
+  profile_image !== undefined
+    ? profile_image
+    : user.profile_image;
 
-    const updatedBannerImage = coverImageFile
-      ? `/uploads/covers/${coverImageFile.filename}`
-      : banner_image !== undefined
-        ? banner_image
-        : user.banner_image;
+let updatedBannerImage =
+  banner_image !== undefined
+    ? banner_image
+    : user.banner_image;
+
+if (profileImageFile) {
+  const uploadedProfile = await uploadImage(
+    profileImageFile.buffer,
+    "civifix/profiles"
+  );
+
+  updatedProfileImage = uploadedProfile.secure_url;
+}
+
+if (coverImageFile) {
+  const uploadedCover = await uploadImage(
+    coverImageFile.buffer,
+    "civifix/covers"
+  );
+
+  updatedBannerImage = uploadedCover.secure_url;
+}
+
 
     // ==========================================
     // PASSWORD

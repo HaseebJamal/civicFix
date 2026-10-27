@@ -2,7 +2,7 @@ import asyncHandler from "../utils/asyncHandler.js";
 import apiErrorHandler from "../utils/apiErrorHandler.js";
 import apiResponseHandler from "../utils/apiResponseHandler.js";
 import pool from "../config/db.js";
-
+import { uploadImage } from "../utils/cloudinary.js";
 export const uploadReportImage = asyncHandler(async (req, res) => {
   const { reportId } = req.params;
   const userId = req.user?.id;
@@ -27,8 +27,8 @@ export const uploadReportImage = asyncHandler(async (req, res) => {
       throw new apiErrorHandler(400, "Image is required");
     }
 
-    const imageUrl = `/uploads/reports/${req.file.filename}`;
-    console.log("IMAGE URL:", imageUrl);
+    // const imageUrl = `/uploads/reports/${req.file.filename}`;
+    
 
     const existingReport = await pool.query(
       `
@@ -44,7 +44,10 @@ export const uploadReportImage = asyncHandler(async (req, res) => {
     if (existingReport.rows.length === 0) {
       throw new apiErrorHandler(404, "No report found");
     }
+const uploadedImage = await uploadImage(req.file.buffer, "civifix/reports");
 
+    const imageUrl = uploadedImage.secure_url;
+    console.log("IMAGE URL:", imageUrl);
     const insertImageIntoReport = await pool.query(
       `
         INSERT INTO report_images
@@ -201,28 +204,16 @@ export const deleteReportImages = asyncHandler(async (req, res) => {
   console.log("USER ROLE:", userRole);
   try {
     if (!reportId) {
-      throw new apiErrorHandler(
-        400,
-        "Report Id is required"
-      );
+      throw new apiErrorHandler(400, "Report Id is required");
     }
     if (!imageId) {
-      throw new apiErrorHandler(
-        400,
-        "Image Id is required"
-      );
+      throw new apiErrorHandler(400, "Image Id is required");
     }
     if (!userId) {
-      throw new apiErrorHandler(
-        401,
-        "User Id is required"
-      );
+      throw new apiErrorHandler(401, "User Id is required");
     }
     if (!userRole) {
-      throw new apiErrorHandler(
-        401,
-        "User role is required"
-      );
+      throw new apiErrorHandler(401, "User role is required");
     }
     const reportResult = await pool.query(
       `
@@ -235,32 +226,24 @@ export const deleteReportImages = asyncHandler(async (req, res) => {
         WHERE id = $1
         LIMIT 1
       `,
-      [reportId]
+      [reportId],
     );
     if (reportResult.rows.length === 0) {
-      throw new apiErrorHandler(
-        404,
-        "Report not found"
-      );
+      throw new apiErrorHandler(404, "Report not found");
     }
     const existingReport = reportResult.rows[0];
     if (existingReport.deleted_at) {
-      throw new apiErrorHandler(
-        404,
-        "Report has already been deleted"
-      );
+      throw new apiErrorHandler(404, "Report has already been deleted");
     }
     if (userRole === "citizen") {
-
       if (existingReport.user_id !== userId) {
         throw new apiErrorHandler(
           403,
-          "You are not authorized to delete this image"
+          "You are not authorized to delete this image",
         );
       }
     }
     if (userRole === "ward_official") {
-
       const wardResult = await pool.query(
         `
           SELECT id
@@ -268,14 +251,11 @@ export const deleteReportImages = asyncHandler(async (req, res) => {
           WHERE official_id = $1
           LIMIT 1
         `,
-        [userId]
+        [userId],
       );
 
       if (wardResult.rows.length === 0) {
-        throw new apiErrorHandler(
-          403,
-          "You are not assigned to any ward"
-        );
+        throw new apiErrorHandler(403, "You are not assigned to any ward");
       }
 
       const assignedWardId = wardResult.rows[0].id;
@@ -283,20 +263,14 @@ export const deleteReportImages = asyncHandler(async (req, res) => {
       if (assignedWardId !== existingReport.ward_id) {
         throw new apiErrorHandler(
           403,
-          "You are not authorized to delete this image"
+          "You are not authorized to delete this image",
         );
       }
     }
-    if (
-      ![
-        "citizen",
-        "ward_official",
-        "superadmin"
-      ].includes(userRole)
-    ) {
+    if (!["citizen", "ward_official", "superadmin"].includes(userRole)) {
       throw new apiErrorHandler(
         403,
-        "You are not authorized to perform this action"
+        "You are not authorized to perform this action",
       );
     }
     const imageResult = await pool.query(
@@ -313,13 +287,10 @@ export const deleteReportImages = asyncHandler(async (req, res) => {
           AND report_id = $2
         LIMIT 1
       `,
-      [imageId, reportId]
+      [imageId, reportId],
     );
     if (imageResult.rows.length === 0) {
-      throw new apiErrorHandler(
-        404,
-        "Image not found"
-      );
+      throw new apiErrorHandler(404, "Image not found");
     }
     // const existingImage = imageResult.rows[0];
     const deletedImage = await pool.query(
@@ -335,29 +306,25 @@ export const deleteReportImages = asyncHandler(async (req, res) => {
           uploaded_by,
           created_at
       `,
-      [imageId, reportId]
+      [imageId, reportId],
     );
-return res
+    return res
       .status(200)
       .json(
         new apiResponseHandler(
           200,
           "Report image deleted successfully",
-          deletedImage.rows[0]
-        )
+          deletedImage.rows[0],
+        ),
       );
   } catch (error) {
-
-    console.log(
-      "Unable to delete report image:",
-      error
-    );
+    console.log("Unable to delete report image:", error);
     if (error instanceof apiErrorHandler) {
       throw error;
     }
     throw new apiErrorHandler(
       500,
-      "Internal server error while deleting image"
+      "Internal server error while deleting image",
     );
   }
 });

@@ -6,7 +6,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-
+import { uploadImage } from "../utils/cloudinary.js";
 const siteAssetsDirectory = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../public/uploads/site-assets",
@@ -216,16 +216,19 @@ export const uploadSiteAsset = asyncHandler(async (req, res) => {
       });
     }
 
-    const filename = `${randomUUID()}.svg`;
-    await mkdir(siteAssetsDirectory, { recursive: true });
-    await writeFile(path.join(siteAssetsDirectory, filename), svg, {
-      flag: "wx",
-    });
+    const uploadedFavicon = await uploadImage(
+  Buffer.from(svg, "utf8"),
+  "civifix/site-assets",
+);
 
-    return res.status(200).json({
-      success: true,
-      data: { settings: { faviconUrl: `/uploads/site-assets/${filename}` } },
-    });
+return res.status(200).json({
+  success: true,
+  data: {
+    settings: {
+      faviconUrl: uploadedFavicon.secure_url,
+    },
+  },
+});
   }
 
   const assetTypes = {
@@ -278,13 +281,12 @@ export const uploadSiteAsset = asyncHandler(async (req, res) => {
     }
   }
 
-  const filename = `${randomUUID()}${asset.extension}`;
-  await mkdir(siteAssetsDirectory, { recursive: true });
-  await writeFile(path.join(siteAssetsDirectory, filename), buffer, {
-    flag: "wx",
-  });
+  const uploadedAsset = await uploadImage(
+  buffer,
+  "civifix/site-assets",
+);
 
-  const url = `/uploads/site-assets/${filename}`;
+const url = uploadedAsset.secure_url;
   return res.status(200).json({
     success: true,
     data: {
