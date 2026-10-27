@@ -1,8 +1,9 @@
 import { useContextHook } from "../../context/useContextHook";
-
+import { useNavigate } from "react-router-dom";
 const HeroSection = ({ pageData }) => {
   const useHeroContext = useContextHook();
   const hero = pageData || useHeroContext;
+  const navigate = useNavigate();
   return (
     <>
       <section className="w-full bg-[#dffded] text-[#1c3026]">
@@ -15,9 +16,13 @@ const HeroSection = ({ pageData }) => {
               <br />
               {useHeroContext.heroData.title[1]}
               <br />
-              <span className="gradient-text">{useHeroContext.heroData.title[2]}</span>
+              <span className="gradient-text">
+                {useHeroContext.heroData.title[2]}
+              </span>
               <br />
-              <span className="gradient-text">{useHeroContext.heroData.title[3]}</span>
+              <span className="gradient-text">
+                {useHeroContext.heroData.title[3]}
+              </span>
             </h1>
 
             <p className="mt-6 text-gray-500 text-base md:text-lg leading-relaxed max-w-lg">
@@ -27,11 +32,17 @@ const HeroSection = ({ pageData }) => {
             </p>
 
             <div className="mt-8 flex flex-wrap gap-4">
-              <button className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-semibold transition shadow-md">
+              <button
+                onClick={() => navigate("/")}
+                className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-semibold transition shadow-md"
+              >
                 {useHeroContext.heroData.button1}
               </button>
 
-              <button className="bg-white text-black hover:bg-green-600 hover:text-white px-6 py-3 rounded-lg font-semibold transition shadow-md">
+              <button
+                onClick={() => navigate("/map")}
+                className="bg-white text-black hover:bg-green-600 hover:text-white px-6 py-3 rounded-lg font-semibold transition shadow-md"
+              >
                 {useHeroContext.heroData.button2}
               </button>
             </div>
