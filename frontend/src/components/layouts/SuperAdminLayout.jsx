@@ -2,7 +2,7 @@ import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { useSiteSettings } from "../../context/SiteSettingsContext.jsx";
-import { siteAssetUrl } from "../../utils/siteAssetUrl.js";
+// import { siteAssetUrl } from "../../utils/siteAssetUrl.js";
 
 import {
   ArchiveRestore,
@@ -127,24 +127,34 @@ export const SuperAdminLayout = () => {
           </button>
 
           {/* Logo */}
-          {(settings.logoSvg || settings.logoUrl) ? (
-            <img
-              src={
-                settings.logoSvg
-                  ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(settings.logoSvg)}`
-                  : siteAssetUrl(settings.logoUrl)
-              }
-              alt=""
-              className="h-10 w-10 shrink-0 rounded-xl object-contain"
-            />
-          ) : (
-            <div
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-bold text-white"
-              style={{ backgroundColor: settings.primaryColor }}
-            >
-              {settings.siteName?.charAt(0) || "C"}
-            </div>
-          )}
+          
+{(settings.logoSvg?.trim() || settings.logoUrl?.trim()) ? (
+  <img
+    src={
+      settings.logoSvg?.trim()
+        ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+            settings.logoSvg
+          )}`
+        : settings.logoUrl
+    }
+    alt={`${settings.siteName || "CivicFix"} logo`}
+    className="h-10 w-10 shrink-0 rounded-xl object-contain"
+    onError={(e) => {
+      console.error(
+        "SuperAdmin logo failed to load:",
+        e.currentTarget.src
+      );
+    }}
+  />
+) : (
+  <div
+    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-bold text-white"
+    style={{ backgroundColor: settings.primaryColor }}
+  >
+    {settings.siteName?.charAt(0) || "C"}
+  </div>
+)}
+
 
           <div className="hidden sm:block">
             <h1 className="font-bold text-green-600">{settings.siteName}</h1>

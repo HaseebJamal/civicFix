@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import api from "../api/axios.js";
 import { defaultSiteSettings } from "./siteSettingsDefaults.js";
-import { siteAssetUrl } from "../utils/siteAssetUrl.js";
+// import { siteAssetUrl } from "../utils/siteAssetUrl.js";
 
 const SiteSettingsContext = createContext(null);
 
@@ -9,7 +9,6 @@ export const SiteSettingsProvider = ({ children }) => {
   const [settings, setSettings] = useState(defaultSiteSettings);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
-
   useEffect(() => {
     const controller = new AbortController();
 
@@ -17,6 +16,8 @@ export const SiteSettingsProvider = ({ children }) => {
       .get("/site-settings/public", { signal: controller.signal })
       .then((response) => {
         const savedSettings = response.data?.data?.settings;
+        console.log("Public site settings:", savedSettings);
+
         if (savedSettings && !controller.signal.aborted) {
           setSettings((current) => ({ ...current, ...savedSettings }));
         }
@@ -43,7 +44,7 @@ export const SiteSettingsProvider = ({ children }) => {
     document.documentElement.lang =
       settings.defaultLanguage || defaultSiteSettings.defaultLanguage;
 
-    const faviconUrl = siteAssetUrl(settings.faviconUrl);
+    const faviconUrl = settings.faviconUrl?.trim() || "";
     let favicon = document.querySelector('link[rel="icon"]');
     if (faviconUrl) {
       if (!favicon) {

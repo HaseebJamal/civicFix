@@ -1,11 +1,14 @@
 import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useSiteSettings } from "../../context/SiteSettingsContext.jsx";
-import { siteAssetUrl } from "../../utils/siteAssetUrl.js";
+// import { siteAssetUrl } from "../../utils/siteAssetUrl.js";
 
 const PublicNavbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const { settings } = useSiteSettings();
+   console.log("Production build:", import.meta.env.PROD);
+  console.log("Navbar logo URL:", settings?.logoUrl);
+  console.log("Navbar SVG exists:", Boolean(settings?.logoSvg?.trim()));
 
   const navLink = ({ isActive }) => {
     return `transition-colors duration-200 ${
@@ -28,17 +31,26 @@ const PublicNavbar = () => {
         >
           <div className="leading-tight">
             <span className="flex items-center gap-2 font-bold tracking-tight text-3xl">
-              {(settings.logoSvg || settings.logoUrl) && (
+              {(settings.logoSvg?.trim() || settings.logoUrl?.trim()) && (
                 <img
                   src={
-                    settings.logoSvg
-                      ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(settings.logoSvg)}`
-                      : siteAssetUrl(settings.logoUrl)
+                    settings.logoSvg?.trim()
+                      ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+                          settings.logoSvg,
+                        )}`
+                      : settings.logoUrl
                   }
-                  alt=""
+                  alt={`${settings.siteName || "CivicFix"} logo`}
                   className="h-10 max-w-32 object-contain"
+                  onError={(e) => {
+                    console.error(
+                      "Navbar logo failed to load:",
+                      e.currentTarget.src,
+                    );
+                  }}
                 />
               )}
+
               <span style={{ color: settings.primaryColor }}>
                 {settings.siteName}
               </span>

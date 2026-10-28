@@ -1,9 +1,12 @@
 import { NavLink } from "react-router-dom";
 import { useSiteSettings } from "../../context/SiteSettingsContext.jsx";
-import { siteAssetUrl } from "../../utils/siteAssetUrl.js";
+// import { siteAssetUrl } from "../../utils/siteAssetUrl.js";
 
 const Footer = () => {
   const { settings } = useSiteSettings();
+  console.log("Production:", import.meta.env.PROD);
+  console.log("LogoURL:", settings?.logoUrl);
+  console.log("Logo SVG exists:", Boolean(settings?.logoSvg));
   return (
     <footer className="border-t border-gray-200 bg-white">
       <div className="mx-auto max-w-7xl px-6 py-12 md:px-8">
@@ -19,17 +22,28 @@ const Footer = () => {
               {(settings.logoSvg || settings.logoUrl) && (
                 <img
                   src={
-                    settings.logoSvg
-                      ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(settings.logoSvg)}`
-                      : siteAssetUrl(settings.logoUrl)
+                    settings.logoSvg?.trim()
+                      ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+                          settings.logoSvg,
+                        )}`
+                      : settings.logoUrl
                   }
-                  alt=""
+                  alt={`${settings.siteName || "CivicFix"} logo`}
                   className="mr-2 inline-block h-8 max-w-28 object-contain align-middle"
+                  onError={(e) => {
+                    console.error(
+                      "Footer logo failed to load:",
+                      e.currentTarget.src,
+                    );
+                  }}
                 />
               )}
+
               {settings.siteName}
             </NavLink>
-
+            console.log("Production:", import.meta.env.PROD);
+            console.log("LogoURL:", settings.logoUrl); console.log("Logo
+            SVGexists:", Boolean(settings.logoSvg));
             <p className="mt-3 max-w-xs text-sm leading-6 text-gray-600">
               {settings.tagline} Helping citizens report civic issues and build
               stronger communities.
@@ -52,16 +66,21 @@ const Footer = () => {
                 </NavLink>
               </li>
               <li>
-                <NavLink to="/about-us" className="transition hover:text-green-700">
+                <NavLink
+                  to="/about-us"
+                  className="transition hover:text-green-700"
+                >
                   About Us
                 </NavLink>
               </li>
               <li>
-                <NavLink to="/contact-us" className="transition hover:text-green-700">
+                <NavLink
+                  to="/contact-us"
+                  className="transition hover:text-green-700"
+                >
                   Contact Us
                 </NavLink>
               </li>
-              
             </ul>
           </div>
 

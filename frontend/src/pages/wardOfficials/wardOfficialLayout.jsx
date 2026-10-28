@@ -1,10 +1,5 @@
 import { useState } from "react";
-import {
-  NavLink,
-  Outlet,
-  useLocation,
-  useNavigate,
-} from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   Bell,
   ChartColumnBig,
@@ -18,7 +13,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { useSiteSettings } from "../../context/SiteSettingsContext.jsx";
-import { siteAssetUrl } from "../../utils/siteAssetUrl.js";
+// import { siteAssetUrl } from "../../utils/siteAssetUrl.js";
 
 const navigation = [
   {
@@ -59,9 +54,11 @@ export const WardOfficialLayout = () => {
     [user?.first_name, user?.last_name].filter(Boolean).join(" ") ||
     user?.username ||
     "Ward official";
-  const logoUrl = settings.logoSvg
-    ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(settings.logoSvg)}`
-    : siteAssetUrl(settings.logoUrl);
+  const logoUrl = settings.logoSvg?.trim()
+    ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+        settings.logoSvg.trim(),
+      )}`
+    : settings.logoUrl?.trim() || "";
 
   const navLinkClass = ({ isActive }) =>
     `flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-all duration-200 ${
@@ -88,13 +85,23 @@ export const WardOfficialLayout = () => {
           {logoUrl ? (
             <img
               src={logoUrl}
-              alt=""
+              alt={`${settings.siteName || "CivicFix"} logo`}
               className="h-10 w-10 shrink-0 rounded-xl object-contain"
+              onError={(event) => {
+                console.error("Ward official logo failed to load:", {
+                  src: event.currentTarget.src,
+                  logoUrl,
+                });
+
+                event.currentTarget.style.display = "none";
+              }}
             />
           ) : (
             <div
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl font-bold text-white"
-              style={{ backgroundColor: settings.primaryColor || "#15803d" }}
+              style={{
+                backgroundColor: settings.primaryColor || "#15803d",
+              }}
             >
               {settings.siteName?.charAt(0) || "C"}
             </div>
@@ -143,45 +150,45 @@ export const WardOfficialLayout = () => {
             sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
           }`}
         >
-        <div className="flex items-center justify-between p-4">
-          <p className="px-3 text-xs font-semibold uppercase tracking-wider text-green-300">
-            Ward Operations
-          </p>
-          <button
-            type="button"
-            onClick={closeSidebar}
-            aria-label="Close sidebar"
-            className="rounded-lg p-2 text-green-100 hover:bg-green-800 md:hidden"
-          >
-            <X size={22} />
-          </button>
-        </div>
-
-        <nav className="flex flex-1 flex-col gap-1 px-3 pb-4">
-          {navigation.map(({ label, path, icon: Icon, end }) => (
-            <NavLink
-              key={path}
-              to={path}
-              end={end}
+          <div className="flex items-center justify-between p-4">
+            <p className="px-3 text-xs font-semibold uppercase tracking-wider text-green-300">
+              Ward Operations
+            </p>
+            <button
+              type="button"
               onClick={closeSidebar}
-              className={navLinkClass}
+              aria-label="Close sidebar"
+              className="rounded-lg p-2 text-green-100 hover:bg-green-800 md:hidden"
             >
-              <Icon size={20} className="shrink-0" />
-              <span>{label}</span>
-            </NavLink>
-          ))}
-        </nav>
+              <X size={22} />
+            </button>
+          </div>
 
-        <div className="border-t border-green-800 p-3">
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium text-green-100 transition hover:bg-green-800 hover:text-white"
-          >
-            <LogOut size={20} />
-            <span>Logout</span>
-          </button>
-        </div>
+          <nav className="flex flex-1 flex-col gap-1 px-3 pb-4">
+            {navigation.map(({ label, path, icon: Icon, end }) => (
+              <NavLink
+                key={path}
+                to={path}
+                end={end}
+                onClick={closeSidebar}
+                className={navLinkClass}
+              >
+                <Icon size={20} className="shrink-0" />
+                <span>{label}</span>
+              </NavLink>
+            ))}
+          </nav>
+
+          <div className="border-t border-green-800 p-3">
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium text-green-100 transition hover:bg-green-800 hover:text-white"
+            >
+              <LogOut size={20} />
+              <span>Logout</span>
+            </button>
+          </div>
         </aside>
       )}
 

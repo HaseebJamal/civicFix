@@ -10,7 +10,7 @@ import {
 import api from "../../api/axios.js";
 import { useSiteSettings } from "../../context/SiteSettingsContext.jsx";
 import { defaultSiteSettings } from "../../context/siteSettingsDefaults.js";
-import { siteAssetUrl } from "../../utils/siteAssetUrl.js";
+// import { siteAssetUrl } from "../../utils/siteAssetUrl.js";
 
 const Toggle = ({ checked, description, label, onChange }) => (
   <div className="flex items-center justify-between gap-4 py-4">
@@ -180,10 +180,13 @@ const Setting = () => {
     }
   };
 
-  const logoPreview = settings.logoSvg
-    ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(settings.logoSvg)}`
-    : siteAssetUrl(settings.logoUrl);
-  const faviconPreview = siteAssetUrl(settings.faviconUrl);
+ const logoPreview = settings.logoSvg?.trim()
+  ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+      settings.logoSvg
+    )}`
+  : settings.logoUrl?.trim() || "";
+
+const faviconPreview = settings.faviconUrl?.trim() || "";
 
   return (
     <section className="mx-auto w-full max-w-5xl space-y-6">

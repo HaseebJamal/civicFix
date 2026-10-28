@@ -2,13 +2,15 @@ import { useState } from "react";
 import { NavLink } from "react-router-dom";
 import { Menu, X, Bell, CircleHelp, UserRound } from "lucide-react";
 import { useSiteSettings } from "../../context/SiteSettingsContext.jsx";
-import { siteAssetUrl } from "../../utils/siteAssetUrl.js";
+// import { siteAssetUrl } from "../../utils/siteAssetUrl.js";
 
 const DashboardNavbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   // const [searchQuery, setSearchQuery] = useState("");
 
   const { settings } = useSiteSettings();
+  console.log("Dashboard logo URL:", settings?.logoUrl);
+console.log("Dashboard logo SVG:", Boolean(settings?.logoSvg?.trim()));
 
   const navlink = ({ isActive }) =>
     `transition-colors duration-200 ${
@@ -36,17 +38,27 @@ const DashboardNavbar = () => {
               className="flex items-center gap-2 text-2xl font-bold tracking-tight sm:text-3xl"
               style={{ color: settings.primaryColor }}
             >
-              {(settings.logoSvg || settings.logoUrl) && (
-                <img
-                  src={
-                    settings.logoSvg
-                      ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(settings.logoSvg)}`
-                      : siteAssetUrl(settings.logoUrl)
-                  }
-                  alt=""
-                  className="h-10 max-w-32 object-contain"
-                />
-              )}
+             
+{(settings.logoSvg?.trim() || settings.logoUrl?.trim()) && (
+  <img
+    src={
+      settings.logoSvg?.trim()
+        ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+            settings.logoSvg
+          )}`
+        : settings.logoUrl
+    }
+    alt={`${settings.siteName || "CivicFix"} logo`}
+    className="h-10 max-w-32 object-contain"
+    onError={(e) => {
+      console.error(
+        "Dashboard navbar logo failed to load:",
+        e.currentTarget.src
+      );
+    }}
+  />
+)}
+
               {settings.siteName}
             </span>
 
