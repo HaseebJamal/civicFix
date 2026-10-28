@@ -3,6 +3,7 @@ import apiErrorHandler from "../utils/apiErrorHandler.js";
 import apiResponseHandler from "../utils/apiResponseHandler.js";
 import pool from "../config/db.js";
 import { uploadImage } from "../utils/cloudinary.js";
+import { getIO } from "../socket/socketServer.js";
 export const uploadReportImage = asyncHandler(async (req, res) => {
   const { reportId } = req.params;
   const userId = req.user?.id;
@@ -68,6 +69,19 @@ const uploadedImage = await uploadImage(req.file.buffer, "civifix/reports");
       `,
       [reportId, image_type, userId, imageUrl],
     );
+    const savedImage = insertImageIntoReport.rows[0];
+
+const io = getIO();
+
+io.to("public:map").emit("REPORT_IMAGES_UPDATED", {
+  reportId,
+  image: savedImage,
+});
+
+io.to("public:trending").emit("REPORT_IMAGES_UPDATED", {
+  reportId,
+  image: savedImage,
+});
 
     return res
       .status(201)

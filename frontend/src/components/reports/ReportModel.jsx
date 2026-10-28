@@ -93,6 +93,7 @@ export const ReportModel = () => {
   const editorRef = useRef(null);
   const [selectedImageType, setSelectedImageType] = useState("evidence");
   const [isCapturingLocation, setIsCapturingLocation] = useState(false);
+  const [isPosting, setIsPosting] = useState(false);
   const getLocation = () => {
     if (!navigator.geolocation) {
       setLocationMessage("Your browser does not support GPS.");
@@ -151,144 +152,137 @@ export const ReportModel = () => {
     setIsModelOpen(true);
     getLocation();
   };
-  const handleSubmit = async (e) => {
-    e.preventDefault();
 
-    // 1. Validate location
-    if (!location) {
-      await Swal.fire({
-        icon: "warning",
-        title: "Location Access Required",
-        text: "Please allow location access in your browser and capture your location before submitting the report.",
-        confirmButtonText: "OK",
-        confirmButtonColor: "#16a34a",
-      });
+const handleSubmit = async (e) => {
+  e.preventDefault();
 
-      return;
-    }
+  // Prevent duplicate submissions
+  if (isPosting) return;
 
-    // 2. Validate category
-    if (!category) {
-      await Swal.fire({
-        icon: "warning",
-        title: "Category Required",
-        text: "Please select an issue category.",
-        confirmButtonColor: "#16a34a",
-      });
-      return;
-    }
+  // 1. Validate location
+  if (!location) {
+    await Swal.fire({
+      icon: "warning",
+      title: "Location Access Required",
+      text: "Please allow location access and capture your location before submitting the report.",
+      confirmButtonText: "OK",
+      confirmButtonColor: "#16a34a",
+    });
+    return;
+  }
 
-    // 3. Validate description
-    if (!description.trim()) {
-      await Swal.fire({
-        icon: "warning",
-        title: "Description Required",
-        text: "Please describe the issue.",
-        confirmButtonColor: "#16a34a",
-      });
+  // 2. Validate category
+  if (!category) {
+    await Swal.fire({
+      icon: "warning",
+      title: "Category Required",
+      text: "Please select an issue category.",
+      confirmButtonColor: "#16a34a",
+    });
+    return;
+  }
 
-      editorRef.current?.focus();
-      return;
-    }
+  // 3. Validate description
+  if (!description.trim()) {
+    await Swal.fire({
+      icon: "warning",
+      title: "Description Required",
+      text: "Please describe the issue.",
+      confirmButtonColor: "#16a34a",
+    });
 
-    try {
-      // 4. Prepare report data for Express backend
-      const reportData = {
-        category,
-        description: description.trim(),
-        latitude: location.latitude,
-        longitude: location.longitude,
-        address: reportAddress || undefined,
-      };
-      console.log("Category being sent:", category);
+    editorRef.current?.focus();
+    return;
+  }
 
-      // 5. Create report
-      const response = await api.post("/reports/", reportData);
+  setIsPosting(true);
 
-      // Extract created report from API response
-      const createdReport = response.data?.data ?? response.data;
-      const reportId = createdReport?.id;
+  try {
+    const reportData = {
+      category,
+      description: description.trim(),
+      latitude: location.latitude,
+      longitude: location.longitude,
+      address: reportAddress || undefined,
+    };
 
-      // 6. Upload images after report creation
-      let imagesUploaded = true;
+    const response = await api.post("/reports/", reportData);
 
-      if (reportImage.length > 0 && reportId) {
-        for (const image of reportImage) {
-          const formData = new FormData();
+    const createdReport = response.data?.data ?? response.data;
+    const reportId = createdReport?.id;
 
-          // Must match uploadFileMiddleware.single("image")
-          formData.append("image", image);
+    let imagesUploaded = true;
 
-          // Required by the backend controller
-          formData.append("image_type", selectedImageType);
+    if (reportImage.length > 0 && reportId) {
+      for (const image of reportImage) {
+        const formData = new FormData();
+        formData.append("image", image);
+        formData.append("image_type", selectedImageType);
 
-          try {
-            await api.post(`/reports/${reportId}/images`, formData, {
-              headers: {
-                "Content-Type": undefined,
-              },
-            });
-          } catch (imageError) {
-            imagesUploaded = false;
+        try {
+          await api.post(`/reports/${reportId}/images`, formData, {
+            headers: {
+              "Content-Type": undefined,
+            },
+          });
+        } catch (imageError) {
+          imagesUploaded = false;
 
-            console.error(
-              "Image upload failed:",
-              image.name,
-              imageError.response?.data || imageError.message,
-            );
-          }
+          console.error(
+            "Image upload failed:",
+            image.name,
+            imageError.response?.data || imageError.message,
+          );
         }
-      } else if (reportImage.length > 0 && !reportId) {
-        imagesUploaded = false;
-        console.error("Report ID was not found in the API response.");
       }
-
-      // 7. Reset form after report creation
-      setCategory("");
-      setDescription("");
-      setReportImage([]);
-      setLocation(null);
-      setReportAddress("");
-      setLocationMessage("");
-
-      if (editorRef.current) {
-        editorRef.current.innerText = "";
-      }
-
-      setIsModelOpen(false);
-
-      // 8. Show the appropriate result
-      if (imagesUploaded) {
-        await Swal.fire({
-          icon: "success",
-          title: "Report Created!",
-          text: "Your report has been submitted successfully.",
-          confirmButtonColor: "#16a34a",
-        });
-      } else {
-        await Swal.fire({
-          icon: "warning",
-          title: "Report Created, Images Incomplete",
-          text: "Your report was saved, but some images could not be uploaded.",
-          confirmButtonColor: "#16a34a",
-        });
-      }
-    } catch (error) {
-      console.error(
-        "Report creation failed:",
-        error.response?.data || error.message,
-      );
-
-      await Swal.fire({
-        icon: "error",
-        title: "Report Failed",
-        text:
-          error.response?.data?.message ||
-          "Unable to create your report. Please try again.",
-        confirmButtonColor: "#16a34a",
-      });
+    } else if (reportImage.length > 0 && !reportId) {
+      imagesUploaded = false;
+      console.error("Report ID was not found in the API response.");
     }
-  };
+
+    // Reset form
+    setCategory("");
+    setDescription("");
+    setReportImage([]);
+    setLocation(null);
+    setReportAddress("");
+    setLocationMessage("");
+
+    if (editorRef.current) {
+      editorRef.current.innerText = "";
+    }
+
+    setIsModelOpen(false);
+
+    await Swal.fire({
+      icon: imagesUploaded ? "success" : "warning",
+      title: imagesUploaded
+        ? "Report Created!"
+        : "Report Created, Images Incomplete",
+      text: imagesUploaded
+        ? "Your report has been submitted successfully."
+        : "Your report was saved, but some images could not be uploaded.",
+      confirmButtonColor: "#16a34a",
+    });
+  } catch (error) {
+    console.error(
+      "Report creation failed:",
+      error.response?.data || error.message,
+    );
+
+    await Swal.fire({
+      icon: "error",
+      title: "Report Failed",
+      text:
+        error.response?.data?.message ||
+        "Unable to create your report. Please try again.",
+      confirmButtonColor: "#16a34a",
+    });
+  } finally {
+    setIsPosting(false);
+  }
+};
+
   const handleReportImages = (e) => {
     const files = Array.from(e.target.files || []);
     setReportImage((prev) => [...prev, ...files]);
@@ -548,10 +542,10 @@ export const ReportModel = () => {
 
               <button
                 type="submit"
-                disabled={isCapturingLocation}
-                className="w-full rounded-xl bg-green-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-green-700"
+                disabled={isCapturingLocation || isPosting}
+                className="w-full rounded-xl bg-green-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Post
+                {isPosting ? "Posting..." : "Post"}
               </button>
             </form>
           </div>

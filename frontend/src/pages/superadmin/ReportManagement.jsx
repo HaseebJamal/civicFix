@@ -35,7 +35,8 @@ import "leaflet/dist/leaflet.css";
 
 import api from "../../api/axios.js";
 import { reverseGeocode } from "../../utils/reverseGeocode.js";
-
+import { socket } from "../../socket/socket.js";
+import { useSocket } from "../../hooks/useSocket.js";
 const REPORTS_ENDPOINT = "/reports";
 const OFFICIALS_ENDPOINT = "/users?role=ward_official";
 const PAGE_SIZE = 10;
@@ -552,6 +553,7 @@ export function ReportManagement() {
   const [deletePassword, setDeletePassword] = useState("");
   const [deletionReason, setDeletionReason] = useState("");
   const [mapReport, setMapReport] = useState(null);
+  const { connectionStatus } = useSocket(true);
 
   const fetchReports = useCallback(async (refresh = false) => {
     if (refresh) {
@@ -624,7 +626,26 @@ export function ReportManagement() {
     fetchReports();
     fetchOfficials();
   }, [fetchReports, fetchOfficials]);
+useEffect(() => {
+  const handleReportChange = (report) => {
+    console.log(
+      "[SUPERADMIN] Real-time report event received:",
+      report,
+    );
 
+    fetchReports(true);
+  };
+
+  socket.on("NEW_REPORT", handleReportChange);
+  socket.on("REPORT_STATUS_UPDATED", handleReportChange);
+  socket.on("REPORT_DELETED", handleReportChange);
+
+  return () => {
+    socket.off("NEW_REPORT", handleReportChange);
+    socket.off("REPORT_STATUS_UPDATED", handleReportChange);
+    socket.off("REPORT_DELETED", handleReportChange);
+  };
+}, [fetchReports]);
   const categories = useMemo(
     () =>
       [

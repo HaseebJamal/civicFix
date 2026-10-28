@@ -83,29 +83,30 @@ console.log("Socket connected:", socket.connected);
     }
   }, []);
 
+
+  // Initial fetch
   useEffect(() => {
     fetchTrendingReport();
   }, [fetchTrendingReport]);
 
-  // Listen for real-time trending updates
+  // Real-time report updates
   useEffect(() => {
-    const handleTrendingReports = () => {
+    const handleReportChange = (report) => {
+      console.log("TRENDING: Report event received:", report);
       fetchTrendingReport();
     };
-const handleNewReport = (report) => {
-  console.log("TRENDING PAGE RECEIVED NEW_REPORT:", report);
-  fetchTrendingReport();
-};
 
-socket.on("NEW_REPORT", handleNewReport);
-    socket.on("trending:updated", handleTrendingReports);
+    socket.on("NEW_REPORT", handleReportChange);
+    socket.on("REPORT_STATUS_UPDATED", handleReportChange);
+    socket.on("REPORT_DELETED", handleReportChange);
 
     return () => {
-      socket.off("trending:updated", handleTrendingReports);
-      socket.off("NEW_REPORT", handleNewReport);
+      socket.off("NEW_REPORT", handleReportChange);
+      socket.off("REPORT_STATUS_UPDATED", handleReportChange);
+      socket.off("REPORT_DELETED", handleReportChange);
     };
-  }, [fetchTrendingReport]
-);
+  }, [fetchTrendingReport]);
+
 
   // Like / unlike a report
   // Like / unlike a report

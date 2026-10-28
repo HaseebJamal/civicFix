@@ -16,7 +16,7 @@ export const SiteSettingsProvider = ({ children }) => {
       .get("/site-settings/public", { signal: controller.signal })
       .then((response) => {
         const savedSettings = response.data?.data?.settings;
-        console.log("Public site settings:", savedSettings);
+        // console.log("Public site settings:", savedSettings);
 
         if (savedSettings && !controller.signal.aborted) {
           setSettings((current) => ({ ...current, ...savedSettings }));

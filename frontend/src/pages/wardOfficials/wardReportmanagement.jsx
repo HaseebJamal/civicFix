@@ -211,101 +211,32 @@ export const WardReportManagement = () => {
     }
   }, []);
 
-  useEffect(() => {
-    fetchReports();
+ 
+useEffect(() => {
+  fetchReports();
 
-    const handleNewReport = (payload) => {
-      const report = payload?.report ?? payload;
+  const handleReportChange = (payload) => {
+    console.log("[WARD] Socket event received:", payload);
 
-      if (
-        !report?.id ||
-        !report?.ward_id ||
-        String(report.ward_id) !== assignedWardId.current
-      ) {
-        return;
-      }
+    // Fetch fresh data from the backend.
+    // The API returns reports assigned to this ward only.
+    fetchReports(true);
+  };
 
-      setReports((previous) => {
-        const exists = previous.some(
-          (item) => String(item.id) === String(report.id),
-        );
+  socket.on("NEW_REPORT", handleReportChange);
+  socket.on("REPORT_STATUS_UPDATED", handleReportChange);
+  socket.on("REPORT_DELETED", handleReportChange);
 
-        return exists ? previous : [report, ...previous];
-      });
-    };
+  if (!socket.connected) {
+    socket.connect();
+  }
 
-    const handleStatusUpdated = (payload) => {
-      const report = payload?.report ?? payload;
-
-      if (!report?.id) return;
-
-      if (
-        report.ward_id != null &&
-        String(report.ward_id) !== assignedWardId.current
-      ) {
-        setReports((previous) =>
-          previous.filter((item) => String(item.id) !== String(report.id)),
-        );
-        setSelectedReport((previous) =>
-          previous && String(previous.id) === String(report.id)
-            ? null
-            : previous,
-        );
-        return;
-      }
-
-      setReports((previous) =>
-        previous.map((item) =>
-          String(item.id) === String(report.id) ? { ...item, ...report } : item,
-        ),
-      );
-
-      setSelectedReport((previous) => {
-        if (!previous) return previous;
-
-        if (String(previous.id) !== String(report.id)) {
-          return previous;
-        }
-
-        return {
-          ...previous,
-          ...report,
-        };
-      });
-    };
-
-    const handleReportDeleted = (payload) => {
-      const reportId = payload?.id ?? payload?.reportId;
-
-      if (!reportId) return;
-
-      setReports((previous) =>
-        previous.filter((report) => String(report.id) !== String(reportId)),
-      );
-
-      setSelectedReport((previous) => {
-        if (previous && String(previous.id) === String(reportId)) {
-          return null;
-        }
-
-        return previous;
-      });
-    };
-
-    socket.on("NEW_REPORT", handleNewReport);
-    socket.on("REPORT_STATUS_UPDATED", handleStatusUpdated);
-    socket.on("REPORT_DELETED", handleReportDeleted);
-
-    if (!socket.connected) {
-      socket.connect();
-    }
-
-    return () => {
-      socket.off("NEW_REPORT", handleNewReport);
-      socket.off("REPORT_STATUS_UPDATED", handleStatusUpdated);
-      socket.off("REPORT_DELETED", handleReportDeleted);
-    };
-  }, [fetchReports]);
+  return () => {
+    socket.off("NEW_REPORT", handleReportChange);
+    socket.off("REPORT_STATUS_UPDATED", handleReportChange);
+    socket.off("REPORT_DELETED", handleReportChange);
+  };
+}, [fetchReports]);
 
   const filteredReports = useMemo(() => {
     const normalizedSearch = search.trim().toLowerCase();

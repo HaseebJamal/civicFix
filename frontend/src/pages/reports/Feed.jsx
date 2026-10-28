@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import api from "../../api/axios";
 import { ReportModel } from "../../components/reports/ReportModel";
 import { useAuth } from "../../context/AuthContext";
-
+import { socket } from "../../socket/socket.js";
+import { useSocket } from "../../hooks/useSocket.js";
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 const getProfileImageUrl = (image) => {
@@ -48,52 +49,99 @@ export const Feed = () => {
   const [commentDrafts, setCommentDrafts] = useState({});
   const [commentLoading, setCommentLoading] = useState({});
   const [actionLoading, setActionLoading] = useState({});
+const { connectionStatus } = useSocket(true);
 
-  const fetchReports = useCallback(async () => {
-    try {
-      setError("");
+const fetchReports = useCallback(async ({ background = false } = {}) => {
+  try {
+    setError("");
+
+    if (!background) {
       setLoading(true);
+    }
 
-      const params = {};
-      if (locationPermission.status === "granted") {
-        params.lat = locationPermission.coordinates.lat;
-        params.lng = locationPermission.coordinates.lng;
-        params.radius = NEARBY_RADIUS_KM;
-      }
+    const params = {};
 
-      const response = await api.get("/reports", { params });
+    if (locationPermission.status === "granted") {
+      params.lat = locationPermission.coordinates.lat;
+      params.lng = locationPermission.coordinates.lng;
+      params.radius = NEARBY_RADIUS_KM;
+    }
 
-      const data = response.data?.data;
-      const reportList = Array.isArray(data) ? data : [];
-      if (locationPermission.status === "granted") {
-        const { lat, lng } = locationPermission.coordinates;
-        setReports(
-          reportList.filter((report) => {
-            const reportLat = Number(report.latitude);
-            const reportLng = Number(report.longitude);
-            if (!Number.isFinite(reportLat) || !Number.isFinite(reportLng)) {
-              return false;
-            }
+    const response = await api.get("/reports", {
+      params,
+      headers: {
+        "Cache-Control": "no-cache",
+      },
+    });
 
-            return (
-              getDistanceInKm(
-                { lat, lng },
-                { lat: reportLat, lng: reportLng },
-              ) <= NEARBY_RADIUS_KM
-            );
-          }),
-        );
-      } else {
-        setReports(reportList);
-      }
-    } catch (err) {
-      setError(err.response?.data?.message || "Unable to fetch reports.");
-    } finally {
+    const data = response.data?.data;
+    const reportList = Array.isArray(data) ? data : [];
+
+    if (locationPermission.status === "granted") {
+      const { lat, lng } = locationPermission.coordinates;
+
+      setReports(
+        reportList.filter((report) => {
+          const reportLat = Number(report.latitude);
+          const reportLng = Number(report.longitude);
+
+          if (!Number.isFinite(reportLat) || !Number.isFinite(reportLng)) {
+            return false;
+          }
+
+          return (
+            getDistanceInKm(
+              { lat, lng },
+              { lat: reportLat, lng: reportLng }
+            ) <= NEARBY_RADIUS_KM
+          );
+        })
+      );
+    } else {
+      setReports(reportList);
+    }
+
+    console.log("[FEED] Reports fetched:", reportList);
+  } catch (err) {
+    console.error("[FEED] Fetch failed:", err);
+    setError(err.response?.data?.message || "Unable to fetch reports.");
+  } finally {
+    if (!background) {
       setLoading(false);
     }
-  }, [locationPermission]);
+  }
+}, [locationPermission]);
 
-  useEffect(() => {
+
+
+useEffect(() => {
+  const handleReportChange = (payload) => {
+    console.log("[FEED] Report event:", payload);
+    fetchReports({ background: true });
+  };
+
+  const handleImagesUpdated = (payload) => {
+    console.log("[FEED] Images updated:", payload);
+    fetchReports({ background: true });
+  };
+
+  socket.on("NEW_REPORT", handleReportChange);
+  socket.on("REPORT_STATUS_UPDATED", handleReportChange);
+  socket.on("REPORT_DELETED", handleReportChange);
+  socket.on("REPORT_IMAGES_UPDATED", handleImagesUpdated);
+
+  return () => {
+    socket.off("NEW_REPORT", handleReportChange);
+    socket.off("REPORT_STATUS_UPDATED", handleReportChange);
+    socket.off("REPORT_DELETED", handleReportChange);
+    socket.off("REPORT_IMAGES_UPDATED", handleImagesUpdated);
+  };
+}, [fetchReports]);
+
+
+  
+
+useEffect(() => {
     if (locationPermission.status === "unrequested") {
       locationRequestStarted.current = false;
     }
