@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 import api from "../../api/axios.js";
-
+import { useAuth } from "../../context/AuthContext.jsx";
 const Register = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [validatePhoneNumber, setValidatePhoneNumber] = useState("");
@@ -18,6 +18,7 @@ const Register = () => {
   const [lastName, setLastName] = useState("");
   const location = useLocation();
   const navigate = useNavigate();
+  const { setUser } = useAuth();
 
   const selectedRole = location.state?.role;
 
@@ -95,41 +96,57 @@ const Register = () => {
       phone_number: phoneNumber || null,
       address: address.trim() || null,
     };
+
     try {
       setIsSubmitting(true);
 
       const response = await api.post("/users/register", registrationData);
+
       if (selectedRole === "citizen") {
+        const registeredUser = response.data?.data?.user;
+
+        if (!registeredUser) {
+          throw new Error("Registration response did not include user data.");
+        }
+
+        setUser(registeredUser);
+
         await Swal.fire({
           icon: "success",
           title: "Registration Successful",
-          text: response.data.message || "Your account is created.",
+          text: "Your account has been created successfully.",
           confirmButtonColor: "#16a34a",
         });
 
-        navigate("/dashboard", { replace: true });
+        navigate("/citizen-dashboard", { replace: true });
       } else if (selectedRole === "ward_official") {
         await Swal.fire({
           icon: "success",
-          title: "Registration Successful",
+          title: "Registration Submitted",
           text:
-            response.data.message ||
-            "Your account is awaiting verification by the administrator",
+            response.data?.message ||
+            "Your account is awaiting admin approval.",
           confirmButtonColor: "#16a34a",
         });
+
         navigate("/", { replace: true });
       }
     } catch (error) {
-      Swal.fire({
+      console.error("Registration failed:", error);
+      console.error("Server response:", error.response?.data);
+
+      await Swal.fire({
         icon: "error",
         title: "Registration Failed",
-        text: error.response?.data?.message || "Please try again.",
-        confirmButtonColor: "#16a34a",
+        text:
+          error.response?.data?.message || error.message || "Please try again.",
+        confirmButtonColor: "#dc2626",
       });
     } finally {
       setIsSubmitting(false);
     }
   };
+
   return (
     <section className="min-h-screen bg-[#dffded] flex items-center justify-center p-4 md:p-8">
       <div className="w-full max-w-6xl min-h-[600px] grid grid-cols-1 md:grid-cols-2 overflow-hidden rounded-2xl bg-white shadow-xl">
@@ -160,7 +177,7 @@ const Register = () => {
         {/* Right Side - Form */}
         <div className="flex p-4 md:p-8 lg:p-10">
           <div className="w-full max-w-md">
-              <div className="flex justify-end">
+            <div className="flex justify-end">
               <button
                 onClick={() => navigate("/login")}
                 className="py-2 px-3 shadow-sm border bg-gray-100 rounded-md"

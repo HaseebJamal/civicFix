@@ -140,18 +140,27 @@ export const registerUser = asyncHandler(async (req, res) => {
         ),
       );
     }
-    const accessToken = generateToken(user);
-    const refreshToken = generateRefreshToken(user);
-    const message =
-      role === "ward_official"
-        ? "Your ward official account is awaiting approval."
-        : "Registration successful!";
-    const data = {
+   const accessToken = generateToken(user);
+const refreshToken = generateRefreshToken(user);
+
+const cookieOptions = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "lax",
+  path: "/",
+};
+
+return res
+  .status(201)
+  .cookie("accessToken", accessToken, cookieOptions)
+  .cookie("refreshToken", refreshToken, cookieOptions)
+  .json(
+    new apiResponseHandler(201, "Registration successful!", {
       user,
       accessToken,
       refreshToken,
-    };
-    return res.status(201).json(new apiResponseHandler(201, message, data));
+    })
+  );
   } catch (err) {
     console.error("REGISTER ERROR:", err);
     if (err instanceof apiErrorHandler) {

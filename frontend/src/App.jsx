@@ -52,6 +52,7 @@ import { WardOfficialDashboard } from "./pages/wardOfficials/wardOfficialDashboa
 import WardReportManagement from "./pages/wardOfficials/wardReportmanagement";
 import WardOfficialMap from "./pages/wardOfficials/WardOfficialMap";
 import WardOfficialAnalytics from "./pages/wardOfficials/WardOfficialAnalytics";
+
 const RegistrationRoute = () => {
   const { settings, loading } = useSiteSettings();
   if (loading) {
