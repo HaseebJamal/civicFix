@@ -222,6 +222,42 @@ export const createReport = asyncHandler(async (req, res) => {
   }
 });
 
+export const getPublicReports = asyncHandler(async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        id,
+        category,
+        description,
+        longitude,
+        latitude,
+        address,
+        status,
+        created_at
+      FROM reports
+      WHERE deleted_at IS NULL
+      ORDER BY created_at DESC
+    `);
+
+    return res
+      .status(200)
+      .json(
+        new apiResponseHandler(
+          200,
+          "Public reports fetched successfully!",
+          result.rows,
+        ),
+      );
+  } catch (error) {
+    console.error("Unable to fetch public reports:", error);
+
+    throw new apiErrorHandler(
+      500,
+      error.message || "Something went wrong while fetching public reports",
+    );
+  }
+});
+
 export const getAllReport = asyncHandler(async (req, res) => {
   const userId = req.user.id;
 

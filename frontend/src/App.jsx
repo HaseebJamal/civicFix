@@ -106,7 +106,7 @@ function App() {
             <Route path="/set-new-password" element={<SetNewPassword />} />
 
             {/* Citizen dashboard routes */}
-            <Route element={<ProtectedRoute />}>
+            <Route element={<ProtectedRoute allowedRoles={["citizen"]} />}>
               <Route
                 path="/citizen-dashboard"
                 element={

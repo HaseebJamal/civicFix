@@ -289,18 +289,11 @@ const MapView = ({
       try {
         setLoading(true);
 
-        const response = await api.get("/reports");
+        const response = await api.get("/reports/public");
 
         const allReports = normalizeReports(response);
 
         const validReports = allReports.filter(hasCoordinates);
-
-        console.log("📡 Reports API response:", response.data);
-        console.log("📊 Total reports:", allReports.length);
-        console.log(
-          "📍 Reports with coordinates:",
-          validReports.length
-        );
 
         if (mounted) {
           setReports(validReports);

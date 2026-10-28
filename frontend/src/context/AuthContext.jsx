@@ -3,6 +3,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import api from "../api/axios";
@@ -19,10 +20,49 @@ export const AuthProvider = ({ children }) => {
       return null;
     }
   });
+  const [authLoading, setAuthLoading] = useState(true);
+  const initialSessionChecked = useRef(false);
   const [locationPermission, setLocationPermission] = useState({
     status: "unrequested",
     coordinates: null,
   });
+
+  useEffect(() => {
+    if (initialSessionChecked.current) return;
+    initialSessionChecked.current = true;
+
+    const verifySession = async () => {
+      if (!user) {
+        setAuthLoading(false);
+        return;
+      }
+
+      try {
+        let response;
+
+        try {
+          response = await api.get("/users/me");
+        } catch (error) {
+          if (error.response?.status !== 401) throw error;
+
+          await api.post("/users/refreshtoken");
+          response = await api.get("/users/me");
+        }
+
+        setUser(response.data?.data ?? null);
+      } catch (error) {
+        console.error(
+          "Unable to verify saved session:",
+          error.response?.data || error.message,
+        );
+        setUser(null);
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+
+    verifySession();
+  }, [user]);
 
   useEffect(() => {
     if (user) {
@@ -40,6 +80,8 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
+    const logoutRequest = api.post("/users/logout");
+
     // Remove the saved user.
     localStorage.removeItem(STORAGE_KEY);
 
@@ -68,6 +110,13 @@ export const AuthProvider = ({ children }) => {
     // Clear authenticated user from React state.
     setUser(null);
     setLocationPermission({ status: "unrequested", coordinates: null });
+
+    return logoutRequest.catch((error) => {
+      console.error(
+        "Unable to end server session:",
+        error.response?.data || error.message,
+      );
+    });
   };
 
   return (
@@ -77,6 +126,7 @@ export const AuthProvider = ({ children }) => {
         setUser,
         updateUser,
         logout,
+        authLoading,
         locationPermission,
         setLocationPermission,
       }}

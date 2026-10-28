@@ -2,8 +2,16 @@ import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 const ProtectedRoute = ({ allowedRoles }) => {
-  const { user } = useAuth();
+  const { user, authLoading } = useAuth();
   const location = useLocation();
+
+  if (authLoading) {
+    return (
+      <p className="p-6 text-center text-sm text-gray-500" role="status">
+        Verifying session...
+      </p>
+    );
+  }
 
   // Not logged in
   if (!user) {
@@ -18,15 +26,15 @@ const ProtectedRoute = ({ allowedRoles }) => {
 
   // User is logged in but doesn't have permission
   if (allowedRoles && !allowedRoles.includes(user.role)) {
-    if (user.role === "superadmin") {
-      return <Navigate to="/superadmin" replace />;
-    }
+    const workspaceByRole = {
+      citizen: "/citizen-dashboard",
+      ward_official: "/ward-official",
+      superadmin: "/superadmin",
+    };
 
-    if (user.role === "ward_official") {
-      return <Navigate to="/ward-official" replace />;
-    }
-
-    return <Navigate to="/citizen-dashboard" replace />;
+    return (
+      <Navigate to={workspaceByRole[user.role] || "/login"} replace />
+    );
   }
 
   return <Outlet />;

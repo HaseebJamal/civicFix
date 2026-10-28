@@ -4,6 +4,7 @@ import { userRoleMiddleware } from "../middlewares/userRoleMiddleware.js";
 import { uploadFileMiddleware } from "../middlewares/uploadFileMiddleware.js";
 import {
   createReport,
+  getPublicReports,
   getAllReport,
   getMyReport,
   deleteReportById,
@@ -26,6 +27,7 @@ import {
 const router = Router();
 // {{CREATING REPORTS}}
 router.post("/", authMiddleware, createReport);
+router.get("/public", getPublicReports);
 router.get("/", authMiddleware, getAllReport);
 router.get("/trending", authMiddleware, getTrendingReports);
 router.get("/my", authMiddleware, getMyReport);
